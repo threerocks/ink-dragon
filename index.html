@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="在浏览器里实时生成的水墨墨龙：拖动转换视角，调身长、鹿角、鬃毛、风力和设色。">
+<meta property="og:title" content="山水墨龙">
+<meta property="og:description" content="在浏览器里实时生成的水墨墨龙，可调可玩。">
+<title>山水墨龙</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: the whole screen is the painting; a narrow mounted label (题签) on the right holds the brush settings. */
+:root {
+  --paper: #EEF1EE;        /* cool xuan paper, matches the 青绿 mountains */
+  --paper-deep: #E2E7E3;
+  --ink: #16181C;
+  --ink-soft: #4A5058;
+  --cinnabar: #B3261E;     /* seal red: the seal and the active choice only */
+  --mineral: #1F7D86;      /* stone green, for slider fill */
+  --rule: rgba(22, 24, 28, .14);
+  --font-brush: "Ma Shan Zheng", "STXingkai", "Xingkai SC", "KaiTi", serif;
+  --font-body: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body); overflow: hidden; }
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+#stage canvas:active { cursor: grabbing; }
+#grain { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply; opacity: .5; }
+
+.title { position: fixed; top: calc(20px + env(safe-area-inset-top, 0px)); left: calc(20px + env(safe-area-inset-left, 0px));
+  display: flex; gap: 10px; align-items: flex-start; pointer-events: none; }
+.title h1 { margin: 0; font-family: var(--font-brush); font-weight: 400; font-size: clamp(34px, 5vw, 56px); line-height: 1.02;
+  writing-mode: vertical-rl; letter-spacing: .04em; color: var(--ink); text-shadow: 0 0 18px var(--paper); }
+.seal { margin-top: 6px; width: 30px; height: 30px; background: var(--cinnabar); color: var(--paper); display: grid; place-items: center;
+  font-family: var(--font-brush); font-size: 20px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(179, 38, 30, .25); }
+.byline { position: fixed; left: calc(20px + env(safe-area-inset-left, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  font-size: 12px; color: var(--ink-soft); max-width: 34ch; line-height: 1.6; pointer-events: none; margin: 0;
+  padding: 8px 12px; background: color-mix(in srgb, var(--paper) 86%, transparent); border-left: 2px solid var(--ink); }
+
+/* the mounted label */
+.panel { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 286px; display: flex; flex-direction: column;
+  background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--rule); border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink); }
+.panel header { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 18px 10px; border-bottom: 1px solid var(--rule); }
+.panel header h2 { margin: 0; font-family: var(--font-brush); font-weight: 400; font-size: 24px; }
+.catalogue { font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.panel .body { overflow-y: auto; padding: 6px 18px 16px; display: flex; flex-direction: column; gap: 16px; }
+fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+legend { padding: 0; margin-bottom: 8px; font-size: 12px; font-weight: 600; letter-spacing: .18em; color: var(--ink-soft); }
+.choices { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--ink); }
+.choices button { appearance: none; border: 0; border-left: 1px solid var(--ink); background: transparent; color: var(--ink);
+  font-family: var(--font-body); font-size: 14px; padding: 7px 0; cursor: pointer; }
+.choices button:first-child { border-left: 0; }
+.choices button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.choices button[aria-pressed="true"]::after { content: "·"; color: var(--cinnabar); margin-left: 2px; }
+.row { display: grid; grid-template-columns: 3.4em 1fr 3.2em; align-items: center; gap: 10px; font-size: 14px; }
+.row output { font-family: var(--font-data); font-size: 12px; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(var(--mineral), var(--mineral)) 0/var(--fill, 50%) 100% no-repeat, var(--rule); }
+input[type=range]::-moz-range-track { height: 2px; background: var(--rule); }
+input[type=range]::-moz-range-progress { height: 2px; background: var(--mineral); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 18px; margin-top: -8px; background: var(--ink); border-radius: 1px; }
+input[type=range]::-moz-range-thumb { width: 12px; height: 18px; background: var(--ink); border: 0; border-radius: 1px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.actions button, .toggle { appearance: none; font-family: var(--font-body); font-size: 14px; padding: 8px 6px; cursor: pointer;
+  background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+.actions button:hover, .choices button:hover:not([aria-pressed="true"]) { background: var(--paper-deep); }
+.actions .wide { grid-column: span 2; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--cinnabar); outline-offset: 2px; }
+.note { font-size: 12px; line-height: 1.7; color: var(--ink-soft); margin: 0; }
+.toggle { display: none; }
+
+@media (max-width: 720px) {
+  .title h1 { font-size: 34px; }
+  .byline { display: none; }
+  .panel { top: auto; left: calc(10px + env(safe-area-inset-left, 0px)); right: calc(10px + env(safe-area-inset-right, 0px));
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: auto; max-height: 56%; }
+  .panel.closed .body { display: none; }
+  .toggle { display: inline-block; padding: 4px 12px; font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { .panel { backdrop-filter: none; -webkit-backdrop-filter: none; } }
+</style>
+</head>
+<body>
+<div id="stage" aria-label="可拖动的水墨墨龙场景"></div>
+<canvas id="grain" aria-hidden="true"></canvas>
+<div class="title"><h1>山水墨龙</h1><div class="seal" aria-hidden="true">墨</div></div>
+<p class="byline">拖动画面转换视角，滚轮或双指缩放。龙、山、云全部由代码现场生成，不用任何外部模型。</p>
+
+<aside class="panel" id="panel">
+  <header>
+    <h2>调墨</h2>
+    <span class="catalogue" id="catalogue">龙谱 0731 · 山图 0008</span>
+    <button class="toggle" id="toggle" aria-expanded="false" aria-controls="panelBody">展开</button>
+  </header>
+  <div class="body" id="panelBody">
+    <fieldset>
+      <legend>视角</legend>
+      <div class="choices" id="views">
+        <button id="viewChase" data-view="chase" aria-pressed="true">跟拍</button>
+        <button id="viewWide" data-view="wide" aria-pressed="false">远观</button>
+        <button id="viewFree" data-view="free" aria-pressed="false">自由</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>设色</legend>
+      <div class="choices" id="palettes">
+        <button id="palQinglv" data-palette="qinglv" aria-pressed="true">青绿</button>
+        <button id="palShuimo" data-palette="shuimo" aria-pressed="false">水墨</button>
+        <button id="palQianjiang" data-palette="qianjiang" aria-pressed="false">浅绛</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>龙</legend>
+      <label class="row" for="length">身长 <input id="length" type="range" min="18" max="46" step="1" value="30"><output for="length">30</output></label>
+      <label class="row" for="girth">粗细 <input id="girth" type="range" min="0.7" max="1.6" step="0.05" value="1.15"><output for="girth">1.15</output></label>
+      <label class="row" for="antler">鹿角 <input id="antler" type="range" min="0.4" max="1.6" step="0.05" value="1"><output for="antler">1.00</output></label>
+      <label class="row" for="fur">鬃毛 <input id="fur" type="range" min="0.1" max="1.4" step="0.05" value="1"><output for="fur">1.00</output></label>
+    </fieldset>
+    <fieldset>
+      <legend>风云</legend>
+      <label class="row" for="speed">飞速 <input id="speed" type="range" min="0" max="30" step="1" value="12"><output for="speed">12</output></label>
+      <label class="row" for="wind">风力 <input id="wind" type="range" min="0" max="2.5" step="0.1" value="1"><output for="wind">1.0</output></label>
+      <label class="row" for="mist">云雾 <input id="mist" type="range" min="0" max="1" step="0.05" value="0.6"><output for="mist">0.60</output></label>
+    </fieldset>
+    <div class="actions">
+      <button id="newDragon">换一条龙</button>
+      <button id="newLand">换一片山</button>
+      <button id="pause" class="wide" aria-pressed="false">定格</button>
+    </div>
+    <p class="note">龙按教程的曲线建模法用代码搭出：身体沿曲线放样，鹿角、腮毛、胡须、干笔鬃毛逐根生成，沿飞行路线游动。峰林每座峰从脚到顶单独渐变，峰脊提亮，远山淡入雾中。</p>
+  </div>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+THREE.ColorManagement.enabled = false; // colours below are written as seen (sRGB) and shaders output them unchanged
+
+// ------------------------------------------------------------------ palettes (sRGB hex)
+const PALETTES = {
+  qinglv:    { paper: '#EEF1EE', zenith: '#C3D2DA', horizon: '#F1F4F3', cloud: '#FBFCFB', feet: '#1F7D86', middle: '#3E8FB0', top: '#7A66E6',
+               ink: '#16294A', highlight: '#DCEBEE', haze: '#D9DDF0', moon: '#E58C82' },
+  shuimo:    { paper: '#F0EEE8', zenith: '#D6D8D4', horizon: '#F2F1EC', cloud: '#FAF9F5', feet: '#8E9499', middle: '#5D6368', top: '#2B2E33',
+               ink: '#121316', highlight: '#E9EAE6', haze: '#E4E3DE', moon: '#EFE9DA' },
+  qianjiang: { paper: '#F2EADA', zenith: '#DCCFB6', horizon: '#F4ECDD', cloud: '#FBF6EC', feet: '#B49B78', middle: '#8C6F55', top: '#5A4334',
+               ink: '#231A14', highlight: '#F4E9D3', haze: '#EBDFC9', moon: '#E58C82' },
+};
+const DRAGON_INK = '#141418';
+
+// ------------------------------------------------------------------ seeded randomness
+function rngFrom(seed) {
+  let a = seed >>> 0;
+  const next = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  return { random: next, uniform: (lo, hi) => lo + (hi - lo) * next(), normal: () => Math.sqrt(-2 * Math.log(next() + 1e-9)) * Math.cos(6.283185 * next()) };
+}
+
+// ------------------------------------------------------------------ shared GLSL
+const NOISE = `
+float hash3(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float vnoise(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3. - 2. * f);
+  return mix(mix(mix(hash3(i), hash3(i + vec3(1,0,0)), f.x), mix(hash3(i + vec3(0,1,0)), hash3(i + vec3(1,1,0)), f.x), f.y),
+             mix(mix(hash3(i + vec3(0,0,1)), hash3(i + vec3(1,0,1)), f.x), mix(hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), f.x), f.y), f.z); }
+float fbm(vec3 p){ float a = .5, s = 0.; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p *= 2.03; a *= .5; } return s / .97; }
+float dither(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(.06711056, .00583715)))); }
+`;
+
+// ------------------------------------------------------------------ renderer, scene, cameras
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, 1, .5, 3000);
+
+const state = { view: 'chase', palette: 'qinglv', length: 30, girth: 1.15, antler: 1, fur: 1, speed: 12, wind: 1, mist: .6,
+                dragonSeed: 731, landSeed: 8, paused: false, time: 0 };
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (reduceMotion) state.paused = true;
+
+const col = hex => { const c = new THREE.Color(hex); return new THREE.Vector3(c.r, c.g, c.b); };
+
+// ------------------------------------------------------------------ sky dome and moon
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false,
+  uniforms: { uZenith: { value: new THREE.Vector3() }, uHorizon: { value: new THREE.Vector3() }, uCloud: { value: new THREE.Vector3() }, uTime: { value: 0 } },
+  vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
+  fragmentShader: NOISE + `uniform vec3 uZenith, uHorizon, uCloud; uniform float uTime; varying vec3 vDir;
+    void main(){ vec3 d = normalize(vDir); float h = clamp(d.y, -.2, 1.);
+      vec3 c = mix(uHorizon, uZenith, smoothstep(.02, .6, h));
+      vec2 q = d.xz / (max(d.y, 0.) + .22) * 1.4 + vec2(uTime * .006, 0.);
+      float n = fbm(vec3(q, 1.7));
+      c = mix(c, uCloud, smoothstep(.5, .72, n) * smoothstep(-.02, .2, d.y) * .8);
+      gl_FragColor = vec4(c, 1.); }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1500, 32, 16), skyMat);
+sky.renderOrder = -1;
+scene.add(sky);
+
+function moonTexture(hex) {
+  const size = 256, c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'); const r = size * .22;
+  const halo = g.createRadialGradient(size / 2, size / 2, r * .9, size / 2, size / 2, size / 2);
+  halo.addColorStop(0, hex + '66'); halo.addColorStop(1, hex + '00');
+  g.fillStyle = halo; g.fillRect(0, 0, size, size);
+  g.fillStyle = hex; g.beginPath(); g.arc(size / 2, size / 2, r, 0, Math.PI * 2); g.fill();
+  const rng = rngFrom(21);
+  for (let i = 0; i < 14; i++) { // faint maria
+    const a = rng.uniform(0, 6.28), d = rng.uniform(0, r * .7), s = rng.uniform(r * .08, r * .3);
+    g.fillStyle = 'rgba(80,40,40,.06)'; g.beginPath(); g.arc(size / 2 + Math.cos(a) * d, size / 2 + Math.sin(a) * d, s, 0, Math.PI * 2); g.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace; return t;
+}
+const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonTexture('#E58C82'), depthWrite: false, fog: false }));
+moon.scale.set(150, 150, 1);
+scene.add(moon);
+const MOON_DIR = new THREE.Vector3(-.55, .32, -.77).normalize();
+
+// ------------------------------------------------------------------ peak field
+const FIELD = { half: 200, n: 300 };
+const mountainMat = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide,
+  uniforms: { uFeet: { value: new THREE.Vector3() }, uMiddle: { value: new THREE.Vector3() }, uTop: { value: new THREE.Vector3() },
+              uInk: { value: new THREE.Vector3() }, uHigh: { value: new THREE.Vector3() }, uHaze: { value: new THREE.Vector3() },
+              uFog: { value: .38 } },
+  vertexShader: `attribute float rel; attribute float ridge; attribute float cavity;
+    varying float vRel, vRidge, vCavity; varying vec3 vNormal, vView, vWorld;
+    void main(){ vRel = rel; vRidge = ridge; vCavity = cavity; vWorld = position;
+      vec4 mv = modelViewMatrix * vec4(position, 1.); vView = mv.xyz; vNormal = normalize(normalMatrix * normal);
+      gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: NOISE + `uniform vec3 uFeet, uMiddle, uTop, uInk, uHigh, uHaze; uniform float uFog;
+    varying float vRel, vRidge, vCavity; varying vec3 vNormal, vView, vWorld;
+    void main(){
+      float fogNoise = fbm(vWorld * vec3(.09, .22, .09)) - .5;
+      float mask = smoothstep(max(.14, uFog - .26), uFog, vRel + fogNoise * .3);
+      if (mask < dither(gl_FragCoord.xy)) discard;
+      float streak = fbm(vWorld * vec3(.18, .5, .18));
+      float h = clamp(vRel + (streak - .5) * .3, 0., 1.);
+      vec3 c = h < .5 ? mix(uFeet, uMiddle, h / .5) : mix(uMiddle, uTop, (h - .5) / .45);
+      c *= mix(1., .45, vCavity);
+      c = mix(c, uHigh, smoothstep(.35, 1., vRidge) * .55);
+      float facing = 1. - abs(dot(normalize(vNormal), normalize(-vView)));
+      float jitter = fbm(vWorld * .25) - .5;
+      float edge = facing + jitter * .28;
+      if (edge > .8) c = uInk; else if (edge > .64) c = mix(c, uInk, .45);
+      float dist = length(vView);
+      c = mix(c, uHaze, clamp((dist - 60.) / 260., 0., 1.) * .7);
+      gl_FragColor = vec4(c, 1.); }`,
+});
+let fieldMesh = null;
+
+function buildField(seed) {
+  const rng = rngFrom(seed * 977 + 13);
+  const N = FIELD.n, half = FIELD.half, step = 2 * half / N, W = N + 1;
+  const z = new Float32Array(W * W), owner = new Float32Array(W * W).fill(1), ownerW = new Float32Array(W * W).fill(1);
+  const clusters = 118, tall = 26;
+  const peaks = [];
+  for (let c = 0; c < clusters; c++) {
+    let cx, cz;
+    do { cx = rng.uniform(-half * .95, half * .95); cz = rng.uniform(-half * .95, half * .95); } while (Math.hypot(cx, cz) < 34); // keep the centre open for the camera
+    const massif = tall * rng.uniform(.55, 1.2);
+    peaks.push([cx, cz, massif, massif * rng.uniform(.3, .48), rng.uniform(1.15, 1.6)]);
+    const members = 2 + Math.floor(rng.uniform(0, 4));
+    for (let m = 0; m < members; m++) {
+      const spread = massif * .5;
+      const h = massif * rng.uniform(.35, .8);
+      peaks.push([cx + rng.normal() * spread, cz + rng.normal() * spread * .6, h, h * rng.uniform(.12, .22), rng.uniform(1.7, 2.5)]);
+    }
+  }
+  for (const [px, pz, h, w, k] of peaks) {
+    const reach = w * 3.2;
+    const i0 = Math.max(0, Math.floor((px - reach + half) / step)), i1 = Math.min(N, Math.ceil((px + reach + half) / step));
+    const j0 = Math.max(0, Math.floor((pz - reach + half) / step)), j1 = Math.min(N, Math.ceil((pz + reach + half) / step));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = -half + i * step, y = -half + j * step;
+      const d = Math.hypot(x - px, (y - pz) * 1.15) / w;
+      const v = h * Math.exp(-Math.pow(d, k));
+      const at = j * W + i;
+      if (v > z[at]) { z[at] = v; owner[at] = h; ownerW[at] = w; }
+    }
+  }
+  const ph = [rng.uniform(0, 6), rng.uniform(0, 6), rng.uniform(0, 6), rng.uniform(0, 6), rng.uniform(0, 6), rng.uniform(0, 6)];
+  for (let j = 0; j < W; j++) for (let i = 0; i < W; i++) {
+    const at = j * W + i, x = -half + i * step, y = -half + j * step;
+    if (z[at] <= 0) continue;
+    let detail = 0;
+    [[.9, .5, 0], [2.3, .3, 2], [5.1, .2, 4]].forEach(([s, wgt, p]) => { detail += wgt * Math.abs(Math.sin(x * s + ph[p] + Math.sin(y * s * .7 + ph[p + 1]) * 1.7)); });
+    let v = z[at] * (1 + .22 * (detail - .55));
+    const u = x / ownerW[at], vv = y / ownerW[at];
+    let crags = 0;
+    [[3.1, .45], [6.7, .3], [13.9, .25]].forEach(([f, wgt], n) => { crags += wgt * Math.abs(Math.sin(u * f + ph[n] + .8 * Math.sin(vv * f * .7 + ph[n + 2]))); });
+    v *= 1 - .28 * Math.min(1, v / owner[at]) * (crags - .45);
+    z[at] = Math.max(0, v);
+  }
+  // crest / crease from a blurred copy of the heightfield
+  let blur = Float32Array.from(z);
+  const tmp = new Float32Array(W * W);
+  for (let pass = 0; pass < 3; pass++) {
+    for (let j = 0; j < W; j++) for (let i = 0; i < W; i++) { const a = j * W + i; tmp[a] = (blur[j * W + Math.max(0, i - 1)] + blur[a] + blur[j * W + Math.min(N, i + 1)]) / 3; }
+    for (let j = 0; j < W; j++) for (let i = 0; i < W; i++) { const a = j * W + i; blur[a] = (tmp[Math.max(0, j - 1) * W + i] + tmp[a] + tmp[Math.min(N, j + 1) * W + i]) / 3; }
+  }
+  const positions = new Float32Array(W * W * 3), rel = new Float32Array(W * W), ridge = new Float32Array(W * W), cavity = new Float32Array(W * W);
+  for (let j = 0; j < W; j++) for (let i = 0; i < W; i++) {
+    const a = j * W + i;
+    positions[a * 3] = -half + i * step; positions[a * 3 + 1] = z[a]; positions[a * 3 + 2] = -half + j * step;
+    rel[a] = Math.min(1.2, z[a] / owner[a]);
+    const bend = (z[a] - blur[a]) / Math.max(.05 * owner[a], 1e-3);
+    ridge[a] = z[a] > .05 * owner[a] ? Math.max(0, Math.min(1, bend)) : 0;
+    cavity[a] = Math.max(0, Math.min(1, -bend * 1.5));
+  }
+  const index = new Uint32Array(N * N * 6);
+  let k = 0;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const a = j * W + i;
+    index[k++] = a; index[k++] = a + W; index[k++] = a + 1;
+    index[k++] = a + 1; index[k++] = a + W; index[k++] = a + W + 1;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('rel', new THREE.BufferAttribute(rel, 1));
+  geometry.setAttribute('ridge', new THREE.BufferAttribute(ridge, 1));
+  geometry.setAttribute('cavity', new THREE.BufferAttribute(cavity, 1));
+  geometry.setIndex(new THREE.BufferAttribute(index, 1));
+  geometry.computeVertexNormals();
+  if (fieldMesh) { scene.remove(fieldMesh); fieldMesh.geometry.dispose(); }
+  fieldMesh = new THREE.Mesh(geometry, mountainMat);
+  scene.add(fieldMesh);
+  return z;
+}
+
+// cloud sea: two drifting layers between the peaks
+const cloudMat = new THREE.ShaderMaterial({
+  transparent: false, side: THREE.DoubleSide,
+  uniforms: { uColor: { value: new THREE.Vector3() }, uTime: { value: 0 }, uDensity: { value: .6 }, uSeed: { value: 0 } },
+  vertexShader: `varying vec3 vWorld; void main(){ vec4 w = modelMatrix * vec4(position, 1.); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: NOISE + `uniform vec3 uColor; uniform float uTime, uDensity, uSeed; varying vec3 vWorld;
+    void main(){ float n = fbm(vec3(vWorld.xz * .018 + vec2(uTime * .012, uSeed), uSeed));
+      float a = smoothstep(.62 - .3 * uDensity, .8 - .12 * uDensity, n) * (.55 + .45 * uDensity);
+      a *= smoothstep(260., 120., length(vWorld.xz));
+      if (a < dither(gl_FragCoord.xy)) discard; gl_FragColor = vec4(uColor, 1.); }`,
+});
+const cloudLayers = [3.5, 8].map((y, n) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), cloudMat.clone());
+  m.rotation.x = -Math.PI / 2; m.position.y = y; m.material.uniforms.uSeed.value = n * 7.3;
+  scene.add(m); return m;
+});
+
+// ------------------------------------------------------------------ flight path (closed loop weaving between peaks)
+let path = null;
+const PATH = { samples: 2048, length: 1, points: null, tangents: null, sides: null, ups: null };
+function buildPath(seed) {
+  const rng = rngFrom(seed * 131 + 7);
+  const count = 10, pts = [];
+  for (let i = 0; i < count; i++) {
+    const a = i / count * Math.PI * 2;
+    const r = 70 * (1 + .28 * Math.sin(3 * a + rng.uniform(0, 6))) + rng.uniform(-8, 8);
+    pts.push(new THREE.Vector3(Math.cos(a) * r, 24 + 7 * Math.sin(2 * a + rng.uniform(0, 6)) + rng.uniform(-3, 3), Math.sin(a) * r));
+  }
+  path = new THREE.CatmullRomCurve3(pts, true, 'centripetal', .5);
+  const M = PATH.samples;
+  const P = path.getSpacedPoints(M);
+  PATH.length = path.getLength();
+  PATH.points = new Float32Array(M * 3); PATH.tangents = new Float32Array(M * 3); PATH.sides = new Float32Array(M * 3); PATH.ups = new Float32Array(M * 3);
+  const up = new THREE.Vector3(0, 1, 0), t = new THREE.Vector3(), s = new THREE.Vector3(), u = new THREE.Vector3();
+  for (let i = 0; i < M; i++) {
+    t.subVectors(P[(i + 1) % M], P[(i - 1 + M) % M]).normalize();
+    s.crossVectors(up, t).normalize();
+    u.crossVectors(t, s).normalize();
+    PATH.points.set([P[i].x, P[i].y, P[i].z], i * 3); PATH.tangents.set([t.x, t.y, t.z], i * 3);
+    PATH.sides.set([s.x, s.y, s.z], i * 3); PATH.ups.set([u.x, u.y, u.z], i * 3);
+  }
+}
+function frameAt(s, out) { // linear sample of the arc-length table, wrapping around the loop
+  const M = PATH.samples, f = ((s % PATH.length) + PATH.length) % PATH.length / PATH.length * M;
+  const i = Math.floor(f) % M, j = (i + 1) % M, w = f - Math.floor(f);
+  for (const key of ['points', 'tangents', 'sides', 'ups']) {
+    const a = PATH[key];
+    out[key][0] = a[i * 3] * (1 - w) + a[j * 3] * w; out[key][1] = a[i * 3 + 1] * (1 - w) + a[j * 3 + 1] * w; out[key][2] = a[i * 3 + 2] * (1 - w) + a[j * 3 + 2] * w;
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ the dragon (ported from ink_dragon.py)
+function profile(t) {
+  if (t < .55) return .06 + .94 * Math.pow(Math.sin(t / .55 * Math.PI / 2), 1.4);
+  if (t < .9) return 1 - .32 * Math.pow((t - .55) / .35, 1.5);
+  return .68 + .1 * ((t - .9) / .1);
+}
+const V = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k], len: a => Math.hypot(a[0], a[1], a[2]),
+  norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  lerp: (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t],
+};
+class Builder {
+  constructor() { this.pos = []; this.fur = []; this.uv = []; this.groups = { body: [], white: [], pupil: [], fur: [] }; }
+  add(verts, faces, tag = 'body', furW = 0) {
+    const o = this.pos.length / 3;
+    for (const v of verts) { this.pos.push(v[0], v[1], v[2]); this.fur.push(furW); this.uv.push(0, 0); }
+    const g = this.groups[tag];
+    for (const f of faces) for (let i = 1; i < f.length - 1; i++) g.push(o + f[0], o + f[i], o + f[i + 1]);
+  }
+  tube(points, radii, ring = 10, tag = 'body', cap = true) {
+    const verts = [], faces = [], up = [0, 0, 1];
+    points.forEach((p, i) => {
+      const ahead = V.norm(V.sub(points[Math.min(i + 1, points.length - 1)], points[Math.max(i - 1, 0)]));
+      let side = V.cross(ahead, up); if (V.len(side) < 1e-4) side = V.cross(ahead, [0, 1, 0]); side = V.norm(side);
+      const normal = V.norm(V.cross(side, ahead));
+      for (let j = 0; j < ring; j++) { const a = 6.283185 * j / ring; verts.push(V.add(p, V.mul(V.add(V.mul(side, Math.cos(a)), V.mul(normal, Math.sin(a))), radii[i]))); }
+    });
+    for (let i = 0; i < points.length - 1; i++) for (let j = 0; j < ring; j++)
+      faces.push([i * ring + j, i * ring + (j + 1) % ring, (i + 1) * ring + (j + 1) % ring, (i + 1) * ring + j]);
+    if (cap) {
+      const n = points.length;
+      verts.push(V.add(points[n - 1], V.mul(V.norm(V.sub(points[n - 1], points[n - 2])), radii[n - 1] * .3)));
+      const tip = verts.length - 1, last = (n - 1) * ring;
+      for (let j = 0; j < ring; j++) faces.push([last + j, last + (j + 1) % ring, tip]);
+    }
+    this.add(verts, faces, tag);
+  }
+  ellipsoid(c, r, pitch = 0, yaw = 0, tag = 'body', rings = 10, seg = 16) {
+    const cp = Math.cos(pitch * Math.PI / 180), sp = Math.sin(pitch * Math.PI / 180), cy = Math.cos(yaw * Math.PI / 180), sy = Math.sin(yaw * Math.PI / 180);
+    const verts = [], faces = [];
+    for (let i = 0; i <= rings; i++) { const phi = Math.PI * i / rings;
+      for (let j = 0; j < seg; j++) { const th = 6.283185 * j / seg;
+        let x = r[0] * Math.sin(phi) * Math.cos(th), y = r[1] * Math.sin(phi) * Math.sin(th), z = r[2] * Math.cos(phi);
+        [x, z] = [x * cp + z * sp, -x * sp + z * cp]; [x, y] = [x * cy - y * sy, x * sy + y * cy];
+        verts.push([c[0] + x, c[1] + y, c[2] + z]); } }
+    for (let i = 0; i < rings; i++) for (let j = 0; j < seg; j++) faces.push([i * seg + j, i * seg + (j + 1) % seg, (i + 1) * seg + (j + 1) % seg, (i + 1) * seg + j]);
+    this.add(verts, faces, tag);
+  }
+  strand(points, width) { // two crossed ribbons; uv.x across, uv.y root -> tip
+    const count = points.length, o = this.pos.length / 3, g = this.groups.fur;
+    let base = 0;
+    for (const axis of [[0, 0, 1], [0, 1, 0]]) {
+      points.forEach((p, i) => {
+        const ahead = V.norm(V.sub(points[Math.min(i + 1, count - 1)], points[Math.max(i - 1, 0)]));
+        let side = V.cross(ahead, axis); if (V.len(side) < 1e-4) side = V.cross(ahead, [1, 0, 0]); side = V.norm(side);
+        const half = width * (1 - .7 * i / (count - 1)) / 2, v = i / (count - 1);
+        for (const [sgn, u] of [[-1, 0], [1, 1]]) { const q = V.add(p, V.mul(side, half * sgn)); this.pos.push(q[0], q[1], q[2]); this.fur.push(v); this.uv.push(u, v); }
+      });
+      for (let i = 0; i < count - 1; i++) { const a = o + base + 2 * i; g.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+      base += count * 2;
+    }
+  }
+}
+function lock(start, dir, length, droop, curl, rng, steps = 7) {
+  const d = V.norm(dir); let side = V.cross(d, [0, 0, 1]); side = V.len(side) < 1e-4 ? [0, 1, 0] : V.norm(side);
+  const phase = rng.uniform(0, 6.283);
+  const out = [];
+  for (let i = 0; i < steps; i++) { const t = i / (steps - 1);
+    out.push(V.add(V.add(V.add(start, V.mul(d, length * t)), [0, 0, -droop * length * t * t]), V.mul(side, curl * length * Math.sin(phase + i * .9) * t))); }
+  return out;
+}
+function buildDragon({ length, girth, antler, fur, seed }) {
+  const rng = rngFrom(seed), b = new Builder(), R = girth, RING = 18, S = 200;
+  { const verts = [], faces = [];
+    for (let i = 0; i < S; i++) { const x = length * i / (S - 1), r = R * profile(x / length);
+      for (let j = 0; j < RING; j++) { const a = 6.283185 * j / RING; verts.push([x, r * Math.cos(a), r * .92 * Math.sin(a)]); } }
+    for (let i = 0; i < S - 1; i++) for (let j = 0; j < RING; j++) faces.push([i * RING + j, i * RING + (j + 1) % RING, (i + 1) * RING + (j + 1) % RING, (i + 1) * RING + j]);
+    verts.push([-.3, 0, 0]); for (let j = 0; j < RING; j++) faces.push([verts.length - 1, (j + 1) % RING, j]);
+    b.add(verts, faces); }
+  for (let x = length * .1; x < length * .93;) { const r = R * profile(x / length), h = r * rng.uniform(.25, .45), top = r * .88;
+    b.add([[x - .2 * r, -.05 * r, top], [x - .2 * r, .05 * r, top], [x - .75 * r, 0, top + h], [x + .2 * r, 0, top]], [[0, 2, 3], [1, 3, 2], [0, 1, 2]]);
+    x += r * rng.uniform(.9, 1.4); }
+  for (const [t, forward] of [[.42, -.6], [.74, .9]]) {
+    const x0 = length * t, r = R * profile(t);
+    for (const side of [-1, 1]) {
+      const hip = [x0, side * r * .75, -r * .2], knee = V.add(hip, [forward * r * .9, side * r * .7, -r * 1.3]), ankle = V.add(knee, [-forward * r * .3 + r * .4, side * r * .2, -r * 1.0]);
+      b.tube([hip, V.lerp(hip, knee, .5), knee, ankle], [r * .55, r * .42, r * .3, r * .2], 10);
+      for (const claw of [-1, 0, 1]) { const tip = V.add(ankle, [r * .55, claw * r * .25 + side * .05, -r * .25]); b.tube([ankle, V.lerp(ankle, tip, .6), tip], [r * .14, r * .1, r * .02], 6); }
+      for (let k = 0; k < 5; k++) b.strand(lock(V.add(knee, [0, side * r * .2, 0]), [-1, side * .4, .2], r * 1.4, .25, .2, rng), r * .32);
+    } }
+  const hx = length, H = R * profile(1) * 1.9;
+  b.ellipsoid([hx + .45 * H, 0, .15 * H], [.8 * H, .66 * H, .58 * H]);
+  b.ellipsoid([hx + 1.75 * H, 0, .05 * H], [1.25 * H, .44 * H, .27 * H], 2);
+  b.ellipsoid([hx + 2.85 * H, 0, .2 * H], [.32 * H, .42 * H, .3 * H], -15);
+  b.ellipsoid([hx + 1.45 * H, 0, -.42 * H], [1.0 * H, .34 * H, .14 * H], -9);
+  for (const side of [-1, 1]) {
+    b.ellipsoid([hx + 2.95 * H, side * .2 * H, .42 * H], [.14 * H, .13 * H, .12 * H]);
+    b.ellipsoid([hx + .95 * H, side * .36 * H, .55 * H], [.42 * H, .2 * H, .14 * H], -12, side * 10);
+    b.ellipsoid([hx + 1.05 * H, side * .34 * H, .36 * H], [.28 * H, .25 * H, .28 * H], 0, 0, 'white');
+    b.ellipsoid([hx + 1.27 * H, side * .47 * H, .38 * H], [.1 * H, .1 * H, .14 * H], 0, side * 35, 'pupil');
+    for (let k = 0; k < 11; k++) { // cheek ruff
+      const a = (70 - k * 15) * Math.PI / 180, base = [hx + .25 * H, side * .5 * H, .05 * H];
+      const out = V.norm([-Math.cos(a) * .75, side * .55, Math.sin(a)]);
+      const reach = H * rng.uniform(.75, 1.15) * (1 - .25 * Math.abs(k - 5) / 5);
+      const tip = V.add(base, V.mul(out, reach)), mid = V.lerp(base, tip, .5), spread = V.mul(V.norm(V.cross(out, [0, side, 0])), reach * .2);
+      b.add([V.add(base, spread), V.add(mid, V.mul(spread, .8)), tip, V.sub(mid, V.mul(spread, .8)), V.sub(base, spread)], [[0, 1, 2, 3, 4]]);
+    }
+    const root = [hx + .35 * H, side * .3 * H, .6 * H], A = antler;
+    const beam = [root, ...[[-.3, .55, .55], [-.75, 1.25, 1.2], [-1.2, 1.8, 1.95], [-1.4, 2.0, 2.7], [-1.3, 1.95, 3.2]].map(([x, y, z]) => V.add(root, [x * H * A, side * y * H * A, z * H * A]))];
+    b.tube(beam, [.26, .22, .18, .13, .08, .03].map(r => r * H * Math.sqrt(A)), 10);
+    for (const [at, reach] of [[1, [.35, side * .1, .65]], [3, [-.05, -side * .45, .8]]]) {
+      const start = V.lerp(beam[at], beam[at + 1], .45), rv = V.mul(reach, H * A);
+      b.tube([start, V.add(start, V.mul(rv, .5)), V.add(start, rv)], [.12 * H, .08 * H, .025 * H], 8);
+    }
+    const ws = [hx + 2.6 * H, side * .4 * H, 0];
+    const whisker = []; for (let k = 0; k < 10; k++) whisker.push(V.add(ws, [-k * 1.0 * H, side * (.25 + .18 * k) * H, -.2 * H * Math.sin(k * 1.1)]));
+    b.tube(whisker, whisker.map((_, k) => .045 * H * (1 - k / 10) + .006), 5, 'body', false);
+  }
+  const mane = Math.round(520 * fur), fluff = Math.round(260 * fur), beard = Math.round(60 * Math.max(.4, fur));
+  for (let k = 0; k < mane; k++) {
+    const u = Math.pow(rng.random(), 1.6), x = hx + .6 * H - u * length * .62, angle = rng.uniform(-1.2, 1.2), r = R * profile(Math.min(1, x / length));
+    const base = [x, Math.sin(angle) * r * .8, Math.cos(angle) * r * .8 + .2 * H];
+    const reach = r * rng.uniform(1.4, 2.9) * (1.35 - u * .7);
+    b.strand(lock(base, [-1, Math.sin(angle) * .8, .38 + rng.uniform(-.1, .4)], reach, .28, .3, rng), r * .55);
+  }
+  for (let k = 0; k < fluff; k++) {
+    const x = length * rng.uniform(.08, .95), r = R * profile(x / length), angle = rng.uniform(-Math.PI, Math.PI);
+    b.strand(lock([x, Math.sin(angle) * r * .95, Math.cos(angle) * r * .87], [-1, Math.sin(angle) * 1.2, Math.cos(angle) * 1.2], r * rng.uniform(.6, 1.3), .15, .3, rng), r * .45);
+  }
+  for (let k = 0; k < beard; k++)
+    b.strand(lock([hx + rng.uniform(.4, 2.0) * H, rng.uniform(-.28, .28) * H, -.5 * H], [-.45, rng.uniform(-.25, .25), -1], H * rng.uniform(.6, 1.3), .05, .15, rng), H * .16);
+  for (const side of [-1, 1]) for (let k = 0; k < 5; k++) { // flame tail fin
+    const a = (-50 + k * 25) * Math.PI / 180, base = [length * .03, 0, 0], reach = R * rng.uniform(2.2, 3.4) * (1 - .15 * Math.abs(k - 2));
+    const tip = V.add(base, V.mul([-Math.cos(a), side * .15, Math.sin(a)], reach));
+    const width = V.add([0, side * .04, 0], V.mul([Math.sin(a), 0, Math.cos(a)], reach * .22));
+    b.add([V.add(base, V.mul(width, .4)), V.add(V.lerp(base, tip, .45), width), tip, V.sub(V.lerp(base, tip, .45), width), V.sub(base, V.mul(width, .4))], [[0, 1, 2, 3, 4]]);
+  }
+  for (let k = 0; k < Math.round(40 * Math.max(.4, fur)); k++) {
+    const angle = rng.uniform(0, 6.283);
+    b.strand(lock([rng.uniform(0, length * .06), Math.cos(angle) * R * .1, Math.sin(angle) * R * .1], [-1, Math.cos(angle) * .5, Math.sin(angle) * .5], R * rng.uniform(1.5, 2.8), .1, .4, rng), R * .25);
+  }
+  return { builder: b, headX: hx + 2 * H };
+}
+
+const dragonUniforms = { uInk: { value: col(DRAGON_INK) }, uPaper: { value: col('#EEF1EE') } };
+const bodyMat = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide, uniforms: dragonUniforms,
+  vertexShader: `attribute vec3 rest; varying vec3 vRest, vNormal, vView;
+    void main(){ vRest = rest; vec4 mv = modelViewMatrix * vec4(position, 1.); vView = mv.xyz; vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: NOISE + `uniform vec3 uInk, uPaper; varying vec3 vRest, vNormal, vView;
+    void main(){ float facing = 1. - abs(dot(normalize(vNormal), normalize(-vView)));
+      float grain = vnoise(vRest * 9.);
+      if (facing + grain * .55 > 1.02 && dither(gl_FragCoord.xy) > .3) discard;   // dry-brush edges
+      float mottle = fbm(vRest * 1.2);
+      gl_FragColor = vec4(mix(uInk, mix(uInk, uPaper, .12), smoothstep(.3, .75, mottle)), 1.); }`,
+});
+const furMat = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide, uniforms: dragonUniforms,
+  vertexShader: `attribute vec2 uvf; varying vec2 vUv; void main(){ vUv = uvf; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
+  fragmentShader: NOISE + `uniform vec3 uInk; varying vec2 vUv;
+    void main(){ float hairs = vnoise(vec3(vUv.x * 26., vUv.y * 1.6, 3.1)) + .5 * vnoise(vec3(vUv.x * 61., vUv.y * 3., 7.)) - .25;
+      float dry = .27 + .26 * vUv.y;
+      float a = smoothstep(0., .06, hairs - dry) * (1. - smoothstep(.55, 1., vUv.y)) * smoothstep(0., .12, .5 - abs(vUv.x - .5));
+      if (a < dither(gl_FragCoord.xy)) discard; gl_FragColor = vec4(uInk, 1.); }`,
+});
+const whiteMat = new THREE.ShaderMaterial({ uniforms: dragonUniforms, vertexShader: `void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
+  fragmentShader: `uniform vec3 uPaper; void main(){ gl_FragColor = vec4(uPaper, 1.); }` });
+const pupilMat = new THREE.ShaderMaterial({ uniforms: dragonUniforms, vertexShader: `void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
+  fragmentShader: `uniform vec3 uInk; void main(){ gl_FragColor = vec4(uInk, 1.); }` });
+
+let dragon = null; // { mesh, rest, restNormals, fur, count, headX }
+function makeDragon() {
+  const { builder: b, headX } = buildDragon({ length: state.length, girth: state.girth, antler: state.antler, fur: state.fur, seed: state.dragonSeed });
+  const rest = new Float32Array(b.pos), count = rest.length / 3;
+  const order = ['body', 'white', 'pupil', 'fur'];
+  const index = []; const geometry = new THREE.BufferGeometry();
+  let start = 0;
+  order.forEach((tag, m) => { const g = b.groups[tag]; for (const i of g) index.push(i); geometry.addGroup(start, g.length, m); start += g.length; });
+  geometry.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(rest), 3));
+  geometry.setAttribute('rest', new THREE.BufferAttribute(rest, 3));
+  geometry.setAttribute('uvf', new THREE.BufferAttribute(new Float32Array(b.uv), 2));
+  geometry.setIndex(index);
+  geometry.computeVertexNormals();
+  const restNormals = Float32Array.from(geometry.getAttribute('normal').array);
+  const mesh = new THREE.Mesh(geometry, [bodyMat, whiteMat, pupilMat, furMat]);
+  mesh.frustumCulled = false;
+  if (dragon) { scene.remove(dragon.mesh); dragon.mesh.geometry.dispose(); }
+  dragon = { mesh, rest, restNormals, fur: new Float32Array(b.fur), count, headX, distance: dragon ? dragon.distance : 0 };
+  scene.add(mesh);
+  updateCatalogue();
+}
+
+const F = { points: [0, 0, 0], tangents: [0, 0, 0], sides: [0, 0, 0], ups: [0, 0, 0] };
+function bendDragon(t) {
+  const { mesh, rest, restNormals, fur, count } = dragon;
+  const pos = mesh.geometry.getAttribute('position'), nor = mesh.geometry.getAttribute('normal');
+  const P = pos.array, N = nor.array, wind = state.wind;
+  for (let i = 0; i < count; i++) {
+    const x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2];
+    frameAt(dragon.distance + x, F);
+    let ly = y, lz = z;
+    const w = fur[i];
+    if (w > 0) { // flutter: two lifting waves and one sway, each with its own speed and wavelength
+      lz += w * wind * (.18 * Math.sin(t * 5.6 - x * 1.1) + .14 * Math.sin(t * 4.4 - y * 1.6 + x * .3));
+      ly += w * wind * .16 * Math.sin(t * 8.2 - x * 1.8);
+    }
+    const T = F.tangents, Sd = F.sides, U = F.ups, p = F.points;
+    P[i * 3] = p[0] + Sd[0] * ly + U[0] * lz; P[i * 3 + 1] = p[1] + Sd[1] * ly + U[1] * lz; P[i * 3 + 2] = p[2] + Sd[2] * ly + U[2] * lz;
+    const nx = restNormals[i * 3], ny = restNormals[i * 3 + 1], nz = restNormals[i * 3 + 2];
+    N[i * 3] = T[0] * nx + Sd[0] * ny + U[0] * nz; N[i * 3 + 1] = T[1] * nx + Sd[1] * ny + U[1] * nz; N[i * 3 + 2] = T[2] * nx + Sd[2] * ny + U[2] * nz;
+  }
+  pos.needsUpdate = true; nor.needsUpdate = true;
+}
+
+// ------------------------------------------------------------------ cameras
+const orbit = { theta: .6, phi: 1.18, radius: 170, target: new THREE.Vector3(0, 18, 0) };
+const chase = { pos: new THREE.Vector3(), look: new THREE.Vector3(), ready: false };
+const tmpA = { points: [0, 0, 0], tangents: [0, 0, 0], sides: [0, 0, 0], ups: [0, 0, 0] };
+function placeCamera(dt) {
+  if (state.view === 'chase') {
+    const head = dragon.distance + dragon.headX;
+    frameAt(head, tmpA);
+    const look = new THREE.Vector3(...tmpA.points).addScaledVector(new THREE.Vector3(...tmpA.ups), 1.5);
+    frameAt(head - 42, tmpA);
+    const want = new THREE.Vector3(...tmpA.points).addScaledVector(new THREE.Vector3(...tmpA.sides), -18).addScaledVector(new THREE.Vector3(...tmpA.ups), 10);
+    const k = chase.ready ? 1 - Math.exp(-dt * 3) : 1;
+    chase.pos.lerp(want, k); chase.look.lerp(look, k); chase.ready = true;
+    camera.position.copy(chase.pos); camera.lookAt(chase.look);
+  } else if (state.view === 'wide') {
+    camera.position.set(0, 46, 175); camera.lookAt(0, 16, 0);
+  } else {
+    const s = Math.sin(orbit.phi);
+    camera.position.set(orbit.target.x + orbit.radius * s * Math.sin(orbit.theta), orbit.target.y + orbit.radius * Math.cos(orbit.phi), orbit.target.z + orbit.radius * s * Math.cos(orbit.theta));
+    camera.lookAt(orbit.target);
+  }
+}
+
+// pointer: drag to look around (switches to free view), wheel / pinch to zoom
+const pointers = new Map(); let pinch = 0;
+const canvas = renderer.domElement;
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (state.view !== 'free') { const d = camera.position.clone().sub(orbit.target); orbit.radius = Math.min(320, Math.max(40, d.length())); orbit.theta = Math.atan2(d.x, d.z); orbit.phi = Math.acos(Math.max(-1, Math.min(1, d.y / orbit.radius))); setView('free'); } });
+canvas.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  const [px, py] = pointers.get(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pointers.size === 1) { orbit.theta -= (e.clientX - px) * .005; orbit.phi = Math.min(1.5, Math.max(.35, orbit.phi - (e.clientY - py) * .004)); }
+  else if (pointers.size === 2) { const [a, b] = [...pointers.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch) orbit.radius = Math.min(320, Math.max(40, orbit.radius * pinch / d)); pinch = d; }
+});
+const release = e => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = 0; };
+canvas.addEventListener('pointerup', release); canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('wheel', e => { e.preventDefault(); if (state.view !== 'free') return; orbit.radius = Math.min(320, Math.max(40, orbit.radius * (1 + e.deltaY * .001))); }, { passive: false });
+
+// ------------------------------------------------------------------ palette, grain, resize
+function applyPalette() {
+  const p = PALETTES[state.palette];
+  for (const [k, key] of [['uFeet', 'feet'], ['uMiddle', 'middle'], ['uTop', 'top'], ['uInk', 'ink'], ['uHigh', 'highlight'], ['uHaze', 'haze']]) mountainMat.uniforms[k].value = col(p[key]);
+  skyMat.uniforms.uZenith.value = col(p.zenith); skyMat.uniforms.uHorizon.value = col(p.horizon); skyMat.uniforms.uCloud.value = col(p.cloud);
+  cloudLayers.forEach(m => { m.material.uniforms.uColor.value = col(p.cloud); });
+  dragonUniforms.uPaper.value = col(p.paper);
+  moon.material.map.dispose(); moon.material.map = moonTexture(p.moon); moon.material.needsUpdate = true;
+  scene.background = new THREE.Color(p.horizon);
+  document.documentElement.style.setProperty('--paper', p.paper);
+}
+function paintGrain() {
+  const g = document.getElementById('grain'), w = Math.ceil(innerWidth / 2), h = Math.ceil(innerHeight / 2);
+  g.width = w; g.height = h; const ctx = g.getContext('2d'); const img = ctx.createImageData(w, h); const rng = rngFrom(5);
+  for (let i = 0; i < w * h; i++) { const v = 238 + rng.random() * 17; img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v - 3; img.data[i * 4 + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+}
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); paintGrain(); }
+window.addEventListener('resize', resize);
+
+// ------------------------------------------------------------------ controls
+const $ = id => document.getElementById(id);
+function updateCatalogue() { $('catalogue').textContent = `龙谱 ${String(state.dragonSeed).padStart(4, '0')} · 山图 ${String(state.landSeed).padStart(4, '0')}`; }
+function setView(view) { state.view = view; chase.ready = false;
+  document.querySelectorAll('#views button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view))); }
+document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+document.querySelectorAll('#palettes button').forEach(b => b.addEventListener('click', () => {
+  state.palette = b.dataset.palette; document.querySelectorAll('#palettes button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); applyPalette(); }));
+let rebuild = 0;
+const formats = { length: v => v.toFixed(0), girth: v => v.toFixed(2), antler: v => v.toFixed(2), fur: v => v.toFixed(2), speed: v => v.toFixed(0), wind: v => v.toFixed(1), mist: v => v.toFixed(2) };
+for (const key of Object.keys(formats)) {
+  const input = $(key), out = input.nextElementSibling;
+  const sync = () => { const v = parseFloat(input.value); state[key] = v; out.textContent = formats[key](v);
+    input.style.setProperty('--fill', ((v - input.min) / (input.max - input.min) * 100) + '%');
+    if (['length', 'girth', 'antler', 'fur'].includes(key)) { clearTimeout(rebuild); rebuild = setTimeout(makeDragon, 140); }
+    if (key === 'mist') cloudLayers.forEach(m => { m.material.uniforms.uDensity.value = v; }); };
+  input.addEventListener('input', sync); sync();
+}
+$('newDragon').addEventListener('click', () => { state.dragonSeed = Math.floor(Math.random() * 9000) + 100; makeDragon(); });
+$('newLand').addEventListener('click', () => { state.landSeed = Math.floor(Math.random() * 9000) + 100; buildField(state.landSeed); buildPath(state.landSeed); dragon.distance = 0; chase.ready = false; updateCatalogue(); });
+$('pause').addEventListener('click', e => { state.paused = !state.paused; e.currentTarget.setAttribute('aria-pressed', String(state.paused)); e.currentTarget.textContent = state.paused ? '续飞' : '定格'; });
+$('toggle').addEventListener('click', e => { const panel = $('panel'); const open = panel.classList.toggle('closed') === false;
+  e.currentTarget.setAttribute('aria-expanded', String(open)); e.currentTarget.textContent = open ? '收起' : '展开'; });
+if (matchMedia('(max-width: 720px)').matches) $('panel').classList.add('closed');
+else { $('toggle').setAttribute('aria-expanded', 'true'); $('toggle').textContent = '收起'; }
+if (state.paused) { $('pause').setAttribute('aria-pressed', 'true'); $('pause').textContent = '续飞'; }
+
+// ------------------------------------------------------------------ run
+buildField(state.landSeed); buildPath(state.landSeed); makeDragon(); applyPalette(); resize();
+dragon.distance = PATH.length * .15;
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (!state.paused) { state.time += dt; dragon.distance += state.speed * dt; }
+  skyMat.uniforms.uTime.value = state.time; cloudLayers.forEach(m => { m.material.uniforms.uTime.value = state.time; });
+  bendDragon(state.time);
+  placeCamera(dt);
+  sky.position.copy(camera.position);
+  moon.position.copy(camera.position).addScaledVector(MOON_DIR, 900);
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
