@@ -100,6 +100,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cinnabar); 
 .note { font-size: 12px; line-height: 1.7; color: var(--ink-soft); margin: 0; }
 .toggle { display: none; }
 
+body.noui .panel, body.noui .title, body.noui .byline, body.noui .intro, body.noui #ring, body.noui .toast { display: none; }
+.endcard { position: fixed; inset: 0; display: none; place-content: center; justify-items: center; gap: 18px; text-align: center; pointer-events: none;
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--paper) 82%, transparent) 0 38%, transparent 70%); }
+body.ending .endcard { display: grid; }
+body.lift .intro { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+body.nobyline .byline { display: none; }
+.endcard h2 { margin: 0; font-family: var(--font-brush); font-weight: 400; font-size: 112px; letter-spacing: .08em; color: var(--ink); }
+.endcard p { margin: 0; font-family: var(--font-data); font-size: 26px; color: var(--ink); letter-spacing: .04em; }
+.endcard small { font-size: 18px; color: var(--ink-soft); }
 @media (max-width: 720px) {
   .title h1 { font-size: 34px; }
   .byline { display: none; }
@@ -124,6 +133,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cinnabar); 
   <button class="dot" id="dotEye" aria-label="为墨龙点睛">点睛</button>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="endcard" aria-hidden="true"><h2>山水墨龙</h2><p>threerocks.github.io/ink-dragon</p><small>打开网页，为它点睛</small></div>
 
 <aside class="panel" id="panel">
   <header>
@@ -656,6 +666,7 @@ function makeDragon() {
   if (dragon) { scene.remove(dragon.mesh); dragon.mesh.geometry.dispose(); }
   dragon = { mesh, rest, restNormals, fur: new Float32Array(b.fur), count, xmax, eye };
   scene.add(mesh);
+  if (typeof shoot !== 'undefined') applyShoot();
   updateCatalogue();
 }
 
@@ -788,6 +799,12 @@ const orbit = { theta: .6, phi: 1.18, radius: 170, target: new THREE.Vector3(0, 
 const chase = { pos: new THREE.Vector3(), look: new THREE.Vector3(), ready: false };
 const C = { p: [0, 0, 0], t: [0, 0, 0], s: [0, 0, 0], u: [0, 0, 0] };
 function placeCamera(dt, t) {
+  if (shoot.camera === 'head') { // close beside the head, a little ahead of it
+    sampleTable(3, C); const T = new THREE.Vector3(...C.t), S = new THREE.Vector3(...C.s), U = new THREE.Vector3(...C.u), head = new THREE.Vector3(...C.p);
+    camera.position.copy(head).addScaledVector(S, shoot.head[0]).addScaledVector(U, shoot.head[1]).addScaledVector(T, shoot.head[2]);
+    camera.lookAt(head.clone().addScaledVector(T, 2).addScaledVector(U, .6)); return;
+  }
+  if (Array.isArray(shoot.camera)) { camera.position.fromArray(shoot.camera[0]); camera.lookAt(new THREE.Vector3().fromArray(shoot.camera[1])); return; }
   if (motion.phase === 'sleeping') {
     const head = new THREE.Vector3(...localToWorld(dragon.xmax - 3, 0, 0, [0, 0, 0]));
     const a = .9 + Math.sin(t * .07) * .25;
@@ -797,8 +814,8 @@ function placeCamera(dt, t) {
   if (state.view === 'chase') {
     sampleTable(4, C);
     const look = new THREE.Vector3(...C.p).addScaledVector(new THREE.Vector3(...C.u), 1.5);
-    sampleTable(46, C);
-    const want = new THREE.Vector3(...C.p).addScaledVector(new THREE.Vector3(...C.s), -18).addScaledVector(new THREE.Vector3(...C.u), 10);
+    sampleTable(shoot.chase[0], C);
+    const want = new THREE.Vector3(...C.p).addScaledVector(new THREE.Vector3(...C.s), shoot.chase[1]).addScaledVector(new THREE.Vector3(...C.u), shoot.chase[2]);
     const k = chase.ready ? 1 - Math.exp(-dt * 2.6) : 1;
     chase.pos.lerp(want, k); chase.look.lerp(look, k); chase.ready = true;
     camera.position.copy(chase.pos); camera.lookAt(chase.look);
@@ -842,22 +859,23 @@ canvas.addEventListener('pointerup', release); canvas.addEventListener('pointerc
 canvas.addEventListener('wheel', e => { e.preventDefault(); if (state.view !== 'free') return; orbit.radius = Math.min(320, Math.max(40, orbit.radius * (1 + e.deltaY * .001))); }, { passive: false });
 
 // ------------------------------------------------------------------ sound: everything synthesised in the browser
+const CAPTURE = new URLSearchParams(location.search).has('capture'); // frame-stepped recording by a script (promo film)
 const Sound = (() => {
-  let ctx = null, master, verb, recDest, windGain, windFilter, rainGain, enabled = true;
+  // One synthesiser for live play, for the event log of a capture, and for an offline render of that log.
+  let ctx = null, live = null, master, verb, recDest, windGain, windFilter, rainGain, enabled = true;
+  const log = [];
   const noise = (seconds, brown) => { const n = Math.floor(ctx.sampleRate * seconds), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0); let last = 0;
     for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; if (brown) { last = (last + .02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w; } return b; };
   const impulse = (seconds, decay) => { const n = Math.floor(ctx.sampleRate * seconds), b = ctx.createBuffer(2, n, ctx.sampleRate);
     for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); } return b; };
   const send = (node, wet) => { node.connect(master); if (wet) { const g = ctx.createGain(); g.gain.value = wet; node.connect(g); g.connect(verb); } };
   const envelope = (gain, t, attack, peak, hold, release) => { gain.setValueAtTime(.0001, t); gain.exponentialRampToValueAtTime(peak, t + attack); gain.setValueAtTime(peak, t + attack + hold); gain.exponentialRampToValueAtTime(.0001, t + attack + hold + release); };
-  function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
-    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-    ctx = new AC();
+  function graph(destination) {
     master = ctx.createGain(); master.gain.value = enabled ? .9 : 0;
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4;
-    master.connect(comp); comp.connect(ctx.destination);
-    if (ctx.createMediaStreamDestination) { recDest = ctx.createMediaStreamDestination(); comp.connect(recDest); }
+    const limit = ctx.createDynamicsCompressor(); // brick wall: stacked thunder or a roar over rain never clips
+    limit.threshold.value = -2; limit.knee.value = 0; limit.ratio.value = 20; limit.attack.value = .002; limit.release.value = .15;
+    master.connect(comp); comp.connect(limit); limit.connect(destination);
     verb = ctx.createConvolver(); verb.buffer = impulse(3.4, 2.8); const back = ctx.createGain(); back.gain.value = .6; verb.connect(back); back.connect(master);
     const wind = ctx.createBufferSource(); wind.buffer = noise(6, true); wind.loop = true;
     windFilter = ctx.createBiquadFilter(); windFilter.type = 'bandpass'; windFilter.frequency.value = 420; windFilter.Q.value = .8;
@@ -865,62 +883,96 @@ const Sound = (() => {
     const rain = ctx.createBufferSource(); rain.buffer = noise(4, false); rain.loop = true;
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1300; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7500;
     rainGain = ctx.createGain(); rainGain.gain.value = 0; rain.connect(hp); hp.connect(lp); lp.connect(rainGain); send(rainGain, .1); rain.start();
+    return limit;
   }
-  function update(t, wind, speed, weather, sleeping) {
-    if (!ctx) return;
-    const now = ctx.currentTime, gust = .5 + .5 * Math.sin(t * .37) * Math.sin(t * .13 + 1.3);
+  function init() {
+    if (CAPTURE) return;
+    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    ctx = live = new AC();
+    const comp = graph(ctx.destination);
+    if (ctx.createMediaStreamDestination) { recDest = ctx.createMediaStreamDestination(); comp.connect(recDest); }
+  }
+  function bed(when, t, wind, speed, weather, sleeping) { // wind and rain levels; `when` is the audio clock time
+    const gust = .5 + .5 * Math.sin(t * .37) * Math.sin(t * .13 + 1.3);
     const level = (sleeping ? .03 : .04 + .09 * Math.min(2, wind) * (.4 + .6 * gust) * (.55 + speed / 26)) * (weather === 'snow' ? .6 : 1);
-    windGain.gain.setTargetAtTime(level, now, .4);
-    windFilter.frequency.setTargetAtTime(260 + 650 * gust * Math.min(1.6, wind) + speed * 9, now, .5);
-    rainGain.gain.setTargetAtTime(weather === 'rain' ? .16 : weather === 'thunder' ? .22 : 0, now, .8);
+    windGain.gain.setTargetAtTime(level, when, .4);
+    windFilter.frequency.setTargetAtTime(260 + 650 * gust * Math.min(1.6, wind) + speed * 9, when, .5);
+    rainGain.gain.setTargetAtTime(weather === 'rain' ? .16 : weather === 'thunder' ? .22 : 0, when, .8);
   }
-  function drop() { // a single drop of ink onto the eye
-    if (!ctx) return; const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.setValueAtTime(1250, t); o.frequency.exponentialRampToValueAtTime(330, t + .09); envelope(g.gain, t, .004, .35, .02, .3);
-    o.connect(g); send(g, .5); o.start(t); o.stop(t + .5);
+  function update(t, wind, speed, weather, sleeping) { if (ctx && !CAPTURE) bed(ctx.currentTime, t, wind, speed, weather, sleeping); }
+  const voices = {
+    drop(at) { const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.setValueAtTime(1250, t); o.frequency.exponentialRampToValueAtTime(330, t + .09); envelope(g.gain, t, .004, .35, .02, .3);
+      o.connect(g); send(g, .5); o.start(t); o.stop(t + .5); },
+    boom(at) { const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(36, t + .8); envelope(g.gain, t, .01, .9, .05, 1.3);
+      o.connect(g); send(g, .45); o.start(t); o.stop(t + 1.6);
+      const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), ng = ctx.createGain(); n.buffer = noise(1.2, true); f.type = 'lowpass'; f.frequency.value = 380;
+      envelope(ng.gain, t, .005, .7, .02, .6); n.connect(f); f.connect(ng); send(ng, .5); n.start(t); },
+    roar(at) { // growl: detuned saws, tremolo, distortion, three vocal formants, breath, long valley echo
+      const t = ctx.currentTime + at, out = ctx.createGain(); envelope(out.gain, t, .28, .5, 1.1, 1.7);
+      const shaper = ctx.createWaveShaper(), curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 6); } shaper.curve = curve;
+      const amp = ctx.createGain(); amp.gain.value = .6; const trem = ctx.createOscillator(), depth = ctx.createGain(); trem.frequency.value = 16; depth.gain.value = .32; trem.connect(depth); depth.connect(amp.gain);
+      for (const ratio of [1, 1.49, .5]) { const o = ctx.createOscillator(); o.type = 'sawtooth';
+        o.frequency.setValueAtTime(50 * ratio, t); o.frequency.linearRampToValueAtTime(94 * ratio, t + .5); o.frequency.exponentialRampToValueAtTime(42 * ratio, t + 3);
+        o.connect(amp); o.start(t); o.stop(t + 3.2); }
+      amp.connect(shaper);
+      for (const [freq, q, level] of [[320, 3, .9], [860, 4, .55], [1900, 5, .22]]) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+        const lv = ctx.createGain(); lv.gain.value = level; shaper.connect(bp); bp.connect(lv); lv.connect(out); }
+      const breath = ctx.createBufferSource(), bf = ctx.createBiquadFilter(), bg = ctx.createGain(); breath.buffer = noise(3.2, true); bf.type = 'bandpass'; bf.frequency.value = 650; bf.Q.value = .7;
+      envelope(bg.gain, t, .2, .5, 1, 1.6); breath.connect(bf); bf.connect(bg); bg.connect(out); breath.start(t);
+      trem.start(t); trem.stop(t + 3.2); send(out, .75); },
+    thunder(at, near = 1) { const t = ctx.currentTime + at;
+      const crack = ctx.createBufferSource(), hp = ctx.createBiquadFilter(), cg = ctx.createGain(); crack.buffer = noise(1, false); hp.type = 'highpass'; hp.frequency.value = 1600;
+      envelope(cg.gain, t, .003, .45 * near, .02, .35); crack.connect(hp); hp.connect(cg); send(cg, .5); crack.start(t);
+      const rumble = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), rg = ctx.createGain(); rumble.buffer = noise(5, true); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(85, t + 2.8);
+      const curve = new Float32Array(64); for (let i = 0; i < 64; i++) curve[i] = Math.max(.0001, Math.pow(1 - i / 63, 1.6) * (.6 + .4 * Math.random()) * .95);
+      rg.gain.setValueCurveAtTime(curve, t + .05, 4.6); rumble.connect(lp); lp.connect(rg); send(rg, .5); rumble.start(t); },
+    pluck(at, freq, volume = .16) { // guqin-like string: Karplus-Strong computed sample by sample (exact pitch, always stable)
+      const t = ctx.currentTime + at, sr = ctx.sampleRate, n = Math.floor(sr * 3.6), L = sr / freq, Li = Math.floor(L), frac = L - Li;
+      const buffer = ctx.createBuffer(1, n, sr), y = buffer.getChannelData(0);
+      let peak = 0;
+      for (let i = 0; i < n; i++) {
+        const excite = i < L ? (Math.random() * 2 - 1) * (1 - i / L) : 0;
+        const a = i >= Li ? y[i - Li] : 0, b = i >= Li + 1 ? y[i - Li - 1] : 0, c = i >= Li + 2 ? y[i - Li - 2] : 0;
+        y[i] = excite + .9985 * .5 * ((a * (1 - frac) + b * frac) + (b * (1 - frac) + c * frac)); // fractional delay, averaging loss
+        peak = Math.max(peak, Math.abs(y[i]));
+      }
+      const fade = Math.floor(sr * .4);
+      for (let i = 0; i < n; i++) y[i] *= volume / (peak || 1) * (i > n - fade ? (n - i) / fade : 1);
+      const source = ctx.createBufferSource(); source.buffer = buffer;
+      const g = ctx.createGain(); g.gain.value = 1; source.connect(g); send(g, .4); source.start(t); },
+    chime(at) { const t = ctx.currentTime + at; for (const [f, v] of [[1318, .07], [1976, .045]]) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; envelope(g.gain, t, .005, v, .01, 1.6); o.connect(g); send(g, .5); o.start(t); o.stop(t + 1.8); } },
+  };
+  const play = name => (...args) => { // live: sound now (+ delay); capture: log it at the animation clock
+    const at = args[0] || 0;
+    if (CAPTURE) { log.push({ name, t: clock + at, args: args.slice(1) }); return; }
+    if (ctx) voices[name](...args);
+  };
+  function wav(buffer) { // 16-bit PCM WAV, base64
+    const channels = buffer.numberOfChannels, frames = buffer.length, bytes = new DataView(new ArrayBuffer(44 + frames * channels * 2));
+    const text = (o, s) => [...s].forEach((c, i) => bytes.setUint8(o + i, c.charCodeAt(0)));
+    text(0, 'RIFF'); bytes.setUint32(4, 36 + frames * channels * 2, true); text(8, 'WAVEfmt '); bytes.setUint32(16, 16, true); bytes.setUint16(20, 1, true);
+    bytes.setUint16(22, channels, true); bytes.setUint32(24, buffer.sampleRate, true); bytes.setUint32(28, buffer.sampleRate * channels * 2, true);
+    bytes.setUint16(32, channels * 2, true); bytes.setUint16(34, 16, true); text(36, 'data'); bytes.setUint32(40, frames * channels * 2, true);
+    const data = [...Array(channels).keys()].map(c => buffer.getChannelData(c));
+    for (let i = 0, o = 44; i < frames; i++) for (let c = 0; c < channels; c++, o += 2) bytes.setInt16(o, Math.max(-1, Math.min(1, data[c][i])) * 32767, true);
+    let binary = ''; const u8 = new Uint8Array(bytes.buffer); for (let i = 0; i < u8.length; i += 32768) binary += String.fromCharCode.apply(null, u8.subarray(i, i + 32768));
+    return btoa(binary);
   }
-  function boom(at = 0) { // the burst of ink when the dragon wakes
-    if (!ctx) return; const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(36, t + .8); envelope(g.gain, t, .01, .9, .05, 1.3);
-    o.connect(g); send(g, .45); o.start(t); o.stop(t + 1.6);
-    const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), ng = ctx.createGain(); n.buffer = noise(1.2, true); f.type = 'lowpass'; f.frequency.value = 380;
-    envelope(ng.gain, t, .005, .7, .02, .6); n.connect(f); f.connect(ng); send(ng, .5); n.start(t);
+  async function render(duration, events, beds) { // offline: the same voices, scheduled from a capture's log
+    const saved = ctx; ctx = new OfflineAudioContext(2, Math.ceil(48000 * duration), 48000);
+    graph(ctx.destination);
+    for (const b of beds) bed(b.t, b.clock, b.wind, b.speed, b.weather, b.sleeping);
+    for (const e of events) if (voices[e.name] && e.t >= 0 && e.t < duration) voices[e.name](e.t, ...e.args);
+    const buffer = await ctx.startRendering(); ctx = saved;
+    return wav(buffer);
   }
-  function roar(at = 0) { // growl: two detuned saws, tremolo, distortion, three vocal formants, breath, long valley echo
-    if (!ctx) return; const t = ctx.currentTime + at, out = ctx.createGain(); envelope(out.gain, t, .28, .5, 1.1, 1.7);
-    const shaper = ctx.createWaveShaper(), curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 6); } shaper.curve = curve;
-    const amp = ctx.createGain(); amp.gain.value = .6; const trem = ctx.createOscillator(), depth = ctx.createGain(); trem.frequency.value = 16; depth.gain.value = .32; trem.connect(depth); depth.connect(amp.gain);
-    for (const ratio of [1, 1.49, .5]) { const o = ctx.createOscillator(); o.type = 'sawtooth';
-      o.frequency.setValueAtTime(50 * ratio, t); o.frequency.linearRampToValueAtTime(94 * ratio, t + .5); o.frequency.exponentialRampToValueAtTime(42 * ratio, t + 3);
-      o.connect(amp); o.start(t); o.stop(t + 3.2); }
-    amp.connect(shaper);
-    for (const [freq, q, level] of [[320, 3, .9], [860, 4, .55], [1900, 5, .22]]) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
-      const lv = ctx.createGain(); lv.gain.value = level; shaper.connect(bp); bp.connect(lv); lv.connect(out); }
-    const breath = ctx.createBufferSource(), bf = ctx.createBiquadFilter(), bg = ctx.createGain(); breath.buffer = noise(3.2, true); bf.type = 'bandpass'; bf.frequency.value = 650; bf.Q.value = .7;
-    envelope(bg.gain, t, .2, .5, 1, 1.6); breath.connect(bf); bf.connect(bg); bg.connect(out); breath.start(t);
-    trem.start(t); trem.stop(t + 3.2); send(out, .75);
-  }
-  function thunder(near = 1) {
-    if (!ctx) return; const t = ctx.currentTime;
-    const crack = ctx.createBufferSource(), hp = ctx.createBiquadFilter(), cg = ctx.createGain(); crack.buffer = noise(1, false); hp.type = 'highpass'; hp.frequency.value = 1600;
-    envelope(cg.gain, t, .003, .45 * near, .02, .35); crack.connect(hp); hp.connect(cg); send(cg, .5); crack.start(t);
-    const rumble = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), rg = ctx.createGain(); rumble.buffer = noise(5, true); lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(85, t + 2.8);
-    const curve = new Float32Array(64); for (let i = 0; i < 64; i++) curve[i] = Math.max(.0001, Math.pow(1 - i / 63, 1.6) * (.6 + .4 * Math.random()) * .95);
-    rg.gain.setValueCurveAtTime(curve, t + .05, 4.6); rumble.connect(lp); lp.connect(rg); send(rg, .5); rumble.start(t);
-  }
-  function pluck(freq, volume = .16) { // guqin-like string: Karplus-Strong delay loop
-    if (!ctx) return; const t = ctx.currentTime, burst = ctx.createBufferSource(), b = ctx.createBuffer(1, Math.floor(ctx.sampleRate * .03), ctx.sampleRate);
-    const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length); burst.buffer = b;
-    const delay = ctx.createDelay(1); delay.delayTime.value = 1 / freq; const fb = ctx.createGain(); fb.gain.value = .988; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = freq * 5;
-    const out = ctx.createGain(); out.gain.setValueAtTime(volume, t); out.gain.exponentialRampToValueAtTime(.0001, t + 3.4);
-    burst.connect(delay); delay.connect(lp); lp.connect(fb); fb.connect(delay); lp.connect(out); send(out, .4); burst.start(t);
-    setTimeout(() => { try { fb.disconnect(); out.disconnect(); } catch (e) {} }, 3800);
-  }
-  function chime() { if (!ctx) return; const t = ctx.currentTime; for (const [f, v] of [[1318, .07], [1976, .045]]) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; envelope(g.gain, t, .005, v, .01, 1.6); o.connect(g); send(g, .5); o.start(t); o.stop(t + 1.8); } }
-  return { init, update, drop, boom, roar, thunder, pluck, chime,
-           stream: () => recDest ? recDest.stream : null,
-           setEnabled(v) { enabled = v; if (master) master.gain.setTargetAtTime(v ? .9 : 0, ctx.currentTime, .05); } };
+  return { init, update, render, drop: play('drop'), boom: play('boom'), roar: play('roar'), thunder: play('thunder'), pluck: play('pluck'), chime: play('chime'),
+           take: () => log.splice(0, log.length), stream: () => recDest ? recDest.stream : null,
+           setEnabled(v) { enabled = v; if (master && live) master.gain.setTargetAtTime(v ? .9 : 0, live.currentTime, .05); } };
 })();
 const PENTATONIC = [196, 220, 261.63, 293.66, 329.63, 392, 440];
 
@@ -967,7 +1019,7 @@ function lightning(W, H) {
   while (y < end) { y += 18 + Math.random() * 30; x += (Math.random() - .5) * 60; pts.push([x, y]); }
   const branches = []; for (let k = 2; k < pts.length - 2; k += 3) if (Math.random() < .6) { let [bx, by] = pts[k]; const br = [[bx, by]]; for (let s = 0; s < 4; s++) { bx += (Math.random() - .3) * 40 * (Math.random() < .5 ? -1 : 1); by += 14 + Math.random() * 20; br.push([bx, by]); } branches.push(br); }
   bolts.push({ pts, branches, born: clock }); flash = 1; shake = Math.max(shake, .35);
-  setTimeout(() => Sound.thunder(.6 + Math.random() * .4), 150 + Math.random() * 600);
+  const near = .6 + Math.random() * .4; after(.15 + Math.random() * .6, () => Sound.thunder(0, near));
 }
 function drawBolts() {
   for (let i = bolts.length - 1; i >= 0; i--) { const b = bolts[i], age = clock - b.born; if (age > .45) { bolts.splice(i, 1); continue; }
@@ -1019,7 +1071,7 @@ function awaken() {
   dragonUniforms.uDotted.value = 1;
   Sound.drop();
   inkBurst(eye.x, eye.y, 26, 'rgba(18,16,15,', 5);
-  setTimeout(() => {
+  after(.42, () => {
     inkBurst(innerWidth * .5, innerHeight * .44, Math.min(innerWidth, innerHeight) * .32, 'rgba(18,16,15,', 9);
     Sound.boom(); Sound.roar(.08);
     if (!reduceMotion) { shake = 1; flash = .5; }
@@ -1027,7 +1079,7 @@ function awaken() {
     motion.vel.set(motion.vel.x, .4, motion.vel.z).normalize().multiplyScalar(10);
     document.body.classList.remove('sleeping');
     state.awake = true; writeHash();
-  }, 420);
+  });
 }
 function sleepAgain() {
   motion.phase = 'sleeping'; dragonUniforms.uDotted.value = 0; coilTrail(); rebuildTable();
@@ -1054,11 +1106,12 @@ function composeFrame() {
   cg.fillStyle = 'rgba(22,24,28,.55)'; cg.font = `${Math.round(13 * unit)}px "IBM Plex Mono", monospace`; cg.textBaseline = 'bottom';
   cg.fillText(`threerocks.github.io/ink-dragon  龙谱 ${pad(state.dragonSeed)} · 山图 ${pad(state.landSeed)}`, 28 * unit, H - 20 * unit);
 }
-function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+function download(blob, name) { if (CAPTURE) return; const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
 let snapPending = false, recording = null;
 function finishSnap() { composeFrame(); compose.toBlob(b => { if (b) { download(b, `山水墨龙-${pad(state.dragonSeed)}.png`); toast('已存图'); } else toast('这个浏览器不能存图'); }, 'image/png'); }
 function startRecording() {
   if (recording) return;
+  if (CAPTURE) { recording = { rec: null, until: clock + 6 }; document.getElementById('record').setAttribute('aria-pressed', 'true'); return; }
   if (!window.MediaRecorder || !compose.captureStream) { toast('这个浏览器不支持录制，请用 Chrome、Edge 或 Safari'); return; }
   Sound.init(); composeFrame();
   const stream = compose.captureStream(30), audio = Sound.stream();
@@ -1075,7 +1128,7 @@ function tickRecording() {
   if (!recording) return; composeFrame();
   const left = Math.ceil(recording.until - clock), button = document.getElementById('record');
   button.textContent = left > 0 ? `录制中 ${left}` : '录六秒';
-  if (clock >= recording.until) { recording.rec.stop(); recording = null; button.setAttribute('aria-pressed', 'false'); button.textContent = '录六秒'; }
+  if (clock >= recording.until) { if (recording.rec) recording.rec.stop(); else toast('六秒短片已保存'); recording = null; button.setAttribute('aria-pressed', 'false'); button.textContent = '录六秒'; }
 }
 const pad = n => String(n).padStart(4, '0');
 function writeHash() {
@@ -1096,7 +1149,7 @@ function readHash() {
 
 // ------------------------------------------------------------------ grain, resize, toast
 let toastTimer = 0;
-function toast(text) { const t = document.getElementById('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1800); }
+function toast(text) { const t = document.getElementById('toast'); t.textContent = text; t.classList.add('show'); toastTimer = clock + 1.8; }
 function paintGrain() {
   const w = Math.ceil(innerWidth / 2), h = Math.ceil(innerHeight / 2);
   grainCanvas.width = w; grainCanvas.height = h; const ctx = grainCanvas.getContext('2d'); const img = ctx.createImageData(w, h); const rng = rngFrom(5);
@@ -1117,7 +1170,7 @@ function setMode(mode) { state.mode = mode; press('modes', 'mode', mode); pearl.
   if (mode === 'pearl') { pearlGoal.copy(motion.head).add(new THREE.Vector3(0, 6, 0)); pearl.position.copy(pearlGoal); setView('wide'); toast('移动鼠标或手指，引龙追珠'); }
   writeHash(); }
 let note = 0;
-const pluckNext = () => { Sound.init(); Sound.pluck(PENTATONIC[note++ % PENTATONIC.length]); };
+const pluckNext = () => { Sound.init(); Sound.pluck(0, PENTATONIC[note++ % PENTATONIC.length]); };
 document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => { setView(b.dataset.view); pluckNext(); }));
 document.querySelectorAll('#modes button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); pluckNext(); }));
 document.querySelectorAll('#palettes button').forEach(b => b.addEventListener('click', () => { state.palette = b.dataset.palette; press('palettes', 'palette', state.palette); applyLook(); writeHash(); pluckNext(); }));
@@ -1140,30 +1193,64 @@ $('resleep').addEventListener('click', sleepAgain);
 $('dotEye').addEventListener('click', awaken);
 $('snap').addEventListener('click', () => { snapPending = true; });
 $('record').addEventListener('click', startRecording);
-$('share').addEventListener('click', async () => { writeHash(); try { await navigator.clipboard.writeText(location.href); toast('链接已复制，打开就是这条龙'); } catch (e) { toast('复制失败，请手动复制地址栏'); } });
+$('share').addEventListener('click', async () => { writeHash(); if (CAPTURE) { toast('链接已复制，打开就是这条龙'); return; } try { await navigator.clipboard.writeText(location.href); toast('链接已复制，打开就是这条龙'); } catch (e) { toast('复制失败，请手动复制地址栏'); } });
 $('sound').addEventListener('click', e => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', String(on)); e.currentTarget.textContent = on ? '声音 开' : '声音 关'; Sound.init(); Sound.setEnabled(on); });
 $('toggle').addEventListener('click', e => { const panel = $('panel'); const open = panel.classList.toggle('closed') === false;
   e.currentTarget.setAttribute('aria-expanded', String(open)); e.currentTarget.textContent = open ? '收起' : '展开'; });
 if (matchMedia('(max-width: 720px)').matches) $('panel').classList.add('closed');
 else { $('toggle').setAttribute('aria-expanded', 'true'); $('toggle').textContent = '收起'; }
 
+// ------------------------------------------------------------------ filming controls (used only with ?capture=1)
+const shoot = { camera: null, head: [8, 2.2, 5], chase: [46, -18, 10], wire: false, grow: 1, line: 0, rise: 1, field: true, clouds: true, sky: true, ui: true, ending: false, lift: false, byline: true };
+const wireMat = new THREE.MeshBasicMaterial({ color: 0x16181c, wireframe: true });
+let lineObj = null;
+function applyShoot() {
+  if (!dragon) return;
+  dragon.mesh.material = shoot.wire ? [wireMat, wireMat, wireMat, wireMat] : [bodyMat, whiteMat, pupilMat, furMat];
+  const total = dragon.mesh.geometry.index.count;
+  dragon.mesh.geometry.setDrawRange(0, shoot.grow >= 1 ? Infinity : Math.floor(Math.max(0, shoot.grow) * total / 3) * 3);
+  if (fieldMesh) { fieldMesh.visible = shoot.field; fieldMesh.scale.y = Math.max(.002, shoot.rise); }
+  cloudLayers.forEach(m => { m.visible = shoot.clouds; });
+  moon.visible = shoot.sky && (state.weather === 'clear' || state.weather === 'snow');
+  document.body.classList.toggle('noui', !shoot.ui);
+  document.body.classList.toggle('ending', shoot.ending);
+  document.body.classList.toggle('lift', shoot.lift);           // keep the dotting button clear of burned subtitles
+  document.body.classList.toggle('nobyline', !shoot.byline);
+}
+function drawLine() { // the flight curve as a cinnabar tube, drawn from tail to head while the body is being built on it
+  if (shoot.line <= 0) { if (lineObj) lineObj.visible = false; return; }
+  const count = Math.max(2, Math.floor(Math.min(1, shoot.line) * 120)), pts = [];
+  for (let k = 0; k < count; k++) { sampleTable(dragon.xmax * (1 - k / 119), F); pts.push(new THREE.Vector3(...F.p)); }
+  if (!lineObj) { lineObj = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xb3261e })); lineObj.frustumCulled = false; scene.add(lineObj); }
+  lineObj.geometry.dispose();
+  lineObj.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), Math.max(4, count * 2), .16, 8, false);
+  lineObj.visible = true;
+}
+
 // ------------------------------------------------------------------ run
+let clock = 0, motionClock = 0, last = performance.now();
+const timers = [];
+function after(seconds, fn) { timers.push({ at: clock + seconds, fn }); } // timed on the animation clock, so a filmed run is repeatable
 readHash();
 press('palettes', 'palette', state.palette); press('times', 'time', state.time); press('weathers', 'weather', state.weather);
 buildField(state.landSeed); buildPath(state.landSeed); makeDragon(); coilTrail(); rebuildTable(); applyLook(); resize();
 setMode(state.mode);
-if (state.awake) { // a shared link that was already awake opens flying
+function flyNow() { // skip the dotting (shared link that was already awake, or a filmed shot)
   dragonUniforms.uDotted.value = 1; motion.phase = 'flying'; motion.pathS = nearestPathS(motion.head);
-  motion.vel.set(1, .2, 0).normalize().multiplyScalar(state.speed); document.body.classList.remove('sleeping');
+  motion.vel.set(1, .2, 0).normalize().multiplyScalar(Math.max(4, state.speed)); document.body.classList.remove('sleeping');
 }
-let last = performance.now(), clock = 0;
-function tick(now) {
-  const dt = Math.min(.05, (now - last) / 1000); last = now; clock += dt;
+if (state.awake) flyNow();
+
+function frame(dt) {
+  clock += dt;
+  for (let i = timers.length - 1; i >= 0; i--) if (clock >= timers[i].at) { const fn = timers[i].fn; timers.splice(i, 1); fn(); }
+  if (toastTimer && clock > toastTimer) { $('toast').classList.remove('show'); toastTimer = 0; }
   if (!state.paused) { motionClock += dt; steer(dt); }
   if (state.mode === 'pearl') { pearl.position.lerp(pearlGoal, 1 - Math.exp(-dt * 6)); const s = 9 + Math.sin(clock * 5) * .8; pearl.scale.set(s, s, 1);
     if (motion.phase === 'flying' && motion.head.distanceTo(pearl.position) < 7 && clock - caughtAt > 2.5) { caughtAt = clock; Sound.chime(); } }
   rebuildTable();
   bendDragon(motionClock);
+  drawLine();
   placeCamera(dt, clock);
   skyMat.uniforms.uTime.value = clock; cloudLayers.forEach(m => { m.material.uniforms.uTime.value = clock; });
   if ((state.weather === 'thunder') && clock > nextBolt) { lightning(fx.width, fx.height); nextBolt = clock + 4 + Math.random() * 6; }
@@ -1182,10 +1269,45 @@ function tick(now) {
   Sound.update(clock, state.wind, state.speed, state.weather, motion.phase === 'sleeping');
   if (snapPending) { snapPending = false; finishSnap(); }
   tickRecording();
-  requestAnimationFrame(tick);
 }
-let motionClock = 0;
-requestAnimationFrame(tick);
+function tick(now) { const dt = Math.min(.05, (now - last) / 1000); last = now; frame(dt); requestAnimationFrame(tick); }
+
+if (CAPTURE) { // a script steps the page frame by frame, drives it and collects the sound events
+  const shapeKeys = ['length', 'girth', 'antler', 'fur'];
+  window.__ink = {
+    step: dt => frame(dt),
+    set(options) {
+      const o = { ...options };
+      for (const key of Object.keys(shoot)) if (key in o) { shoot[key] = o[key]; delete o[key]; }
+      for (const key of ['speed', 'wind', 'mist', ...shapeKeys]) if (key in o) { state[key] = o[key]; $(key).value = o[key]; $(key).nextElementSibling.textContent = formats[key](o[key]); }
+      if ('dragonSeed' in o) state.dragonSeed = o.dragonSeed;
+      if (shapeKeys.some(k => k in o) || 'dragonSeed' in o) { makeDragon(); if (motion.phase === 'sleeping') coilTrail(); rebuildTable(); }
+      if ('landSeed' in o) { state.landSeed = o.landSeed; buildField(state.landSeed); buildPath(state.landSeed); if (motion.phase !== 'sleeping') motion.pathS = nearestPathS(motion.head); updateCatalogue(); }
+      for (const [key, group, attr] of [['palette', 'palettes', 'palette'], ['time', 'times', 'time'], ['weather', 'weathers', 'weather']]) if (key in o) { state[key] = o[key]; press(group, attr, o[key]); }
+      if (o.weather === 'thunder') nextBolt = clock + 2.5 + Math.random() * 2; // one scripted bolt, then the usual rhythm
+      if (['palette', 'time', 'weather', 'mist'].some(k => k in o)) applyLook();
+      if ('view' in o) setView(o.view);
+      if ('mode' in o) setMode(o.mode);
+      if ('paused' in o) state.paused = o.paused;
+      if (o.phase === 'sleep') sleepAgain();
+      if (o.phase === 'fly') flyNow();
+      if (o.lightning) lightning(fx.width, fx.height);
+      if (o.snapChase) chase.ready = false;
+      applyShoot();
+    },
+    clock: () => clock,
+    take: () => Sound.take(),
+    bed: () => ({ clock, wind: state.wind, speed: state.speed, weather: state.weather, sleeping: motion.phase === 'sleeping' }),
+    render: (duration, events, beds) => Sound.render(duration, events, beds),
+    awaken: () => awaken(),
+    click: id => $(id).click(),
+    pointer: (x, y) => pointerToPearl({ clientX: x * innerWidth, clientY: y * innerHeight }),
+    eye: () => { const e = eyeScreen(); return [e.x, e.y]; },
+    sfx: name => Sound[name](),
+  };
+  frame(1 / 30);
+  window.__inkReady = true;
+} else requestAnimationFrame(tick);
 })();
 </script>
 </body>
