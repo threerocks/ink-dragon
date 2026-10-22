@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="在浏览器里实时生成的水墨墨龙：拖动转换视角，调身长、鹿角、鬃毛、风力和设色。">
+<meta name="description" content="在浏览器里实时生成的水墨墨龙：为它点睛，引它戏珠，换晨昏雨雪，存图录片，全程程序化生成与合成音效。">
 <meta property="og:title" content="山水墨龙">
-<meta property="og:description" content="在浏览器里实时生成的水墨墨龙，可调可玩。">
+<meta property="og:description" content="为墨龙点睛，引它戏珠。龙、山、云、风雨雷声全部由代码现场生成。">
 <title>山水墨龙</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,11 +13,11 @@
 <style>
 /* Layout: the whole screen is the painting; a narrow mounted label (题签) on the right holds the brush settings. */
 :root {
-  --paper: #EEF1EE;        /* cool xuan paper, matches the 青绿 mountains */
+  --paper: #EEF1EE;        /* cool xuan paper; follows the chosen palette */
   --paper-deep: #E2E7E3;
   --ink: #16181C;
   --ink-soft: #4A5058;
-  --cinnabar: #B3261E;     /* seal red: the seal and the active choice only */
+  --cinnabar: #B3261E;     /* seal red: the seal, the active choice and the eye-dotting brush only */
   --mineral: #1F7D86;      /* stone green, for slider fill */
   --rule: rgba(22, 24, 28, .14);
   --font-brush: "Ma Shan Zheng", "STXingkai", "Xingkai SC", "KaiTi", serif;
@@ -27,33 +27,53 @@
 }
 html, body { height: 100%; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body); overflow: hidden; }
-#stage { position: fixed; inset: 0; }
+#stage, #fx { position: fixed; inset: 0; }
 #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 #stage canvas:active { cursor: grabbing; }
+body.pearl #stage canvas { cursor: crosshair; }
+#fx { width: 100%; height: 100%; pointer-events: none; }
 #grain { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply; opacity: .5; }
 
 .title { position: fixed; top: calc(20px + env(safe-area-inset-top, 0px)); left: calc(20px + env(safe-area-inset-left, 0px));
   display: flex; gap: 10px; align-items: flex-start; pointer-events: none; }
 .title h1 { margin: 0; font-family: var(--font-brush); font-weight: 400; font-size: clamp(34px, 5vw, 56px); line-height: 1.02;
   writing-mode: vertical-rl; letter-spacing: .04em; color: var(--ink); text-shadow: 0 0 18px var(--paper); }
-.seal { margin-top: 6px; width: 30px; height: 30px; background: var(--cinnabar); color: var(--paper); display: grid; place-items: center;
-  font-family: var(--font-brush); font-size: 20px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(179, 38, 30, .25); }
+.seal { margin-top: 6px; width: 30px; height: 30px; background: var(--cinnabar); color: #F4EFE3; display: grid; place-items: center;
+  font-family: var(--font-brush); font-size: 20px; border-radius: 3px; }
 .byline { position: fixed; left: calc(20px + env(safe-area-inset-left, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   font-size: 12px; color: var(--ink-soft); max-width: 34ch; line-height: 1.6; pointer-events: none; margin: 0;
   padding: 8px 12px; background: color-mix(in srgb, var(--paper) 86%, transparent); border-left: 2px solid var(--ink); }
 
+/* eye-dotting overlay */
+#ring { position: fixed; left: 0; top: 0; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; pointer-events: none;
+  border: 2px solid var(--cinnabar); opacity: 0; transition: opacity .4s; }
+body.sleeping #ring { opacity: .9; animation: breathe 2.2s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { transform: scale(.82); } 50% { transform: scale(1.12); } }
+.intro { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  display: none; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+body.sleeping .intro { display: flex; }
+.intro p { margin: 0; font-size: 15px; color: var(--ink); background: color-mix(in srgb, var(--paper) 88%, transparent); padding: 6px 14px; }
+.intro p small { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+.dot { appearance: none; width: 74px; height: 74px; border-radius: 50%; border: 0; cursor: pointer; background: var(--cinnabar); color: #F4EFE3;
+  font-family: var(--font-brush); font-size: 30px; box-shadow: 0 0 0 6px color-mix(in srgb, var(--cinnabar) 22%, transparent); }
+.dot:hover { box-shadow: 0 0 0 9px color-mix(in srgb, var(--cinnabar) 26%, transparent); }
+
+.toast { position: fixed; left: 50%; top: calc(24px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); padding: 8px 16px;
+  background: var(--ink); color: #F4EFE3; font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+
 /* the mounted label */
 .panel { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); right: calc(16px + env(safe-area-inset-right, 0px));
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 286px; display: flex; flex-direction: column;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 290px; display: flex; flex-direction: column;
   background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   border: 1px solid var(--rule); border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink); }
-.panel header { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 18px 10px; border-bottom: 1px solid var(--rule); }
+.panel header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 14px 18px 10px; border-bottom: 1px solid var(--rule); }
 .panel header h2 { margin: 0; font-family: var(--font-brush); font-weight: 400; font-size: 24px; }
 .catalogue { font-family: var(--font-data); font-size: 11px; color: var(--ink-soft); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
-.panel .body { overflow-y: auto; padding: 6px 18px 16px; display: flex; flex-direction: column; gap: 16px; }
-fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-legend { padding: 0; margin-bottom: 8px; font-size: 12px; font-weight: 600; letter-spacing: .18em; color: var(--ink-soft); }
-.choices { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--ink); }
+.panel .body { overflow-y: auto; padding: 6px 18px 16px; display: flex; flex-direction: column; gap: 15px; }
+fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+legend { padding: 0; margin-bottom: 7px; font-size: 12px; font-weight: 600; letter-spacing: .18em; color: var(--ink-soft); }
+.choices { display: grid; grid-template-columns: repeat(var(--n, 3), 1fr); border: 1px solid var(--ink); }
 .choices button { appearance: none; border: 0; border-left: 1px solid var(--ink); background: transparent; color: var(--ink);
   font-family: var(--font-body); font-size: 14px; padding: 7px 0; cursor: pointer; }
 .choices button:first-child { border-left: 0; }
@@ -67,11 +87,15 @@ input[type=range]::-moz-range-track { height: 2px; background: var(--rule); }
 input[type=range]::-moz-range-progress { height: 2px; background: var(--mineral); }
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 18px; margin-top: -8px; background: var(--ink); border-radius: 1px; }
 input[type=range]::-moz-range-thumb { width: 12px; height: 18px; background: var(--ink); border: 0; border-radius: 1px; }
+.text { display: grid; grid-template-columns: 3.4em 1fr; align-items: center; gap: 10px; font-size: 14px; }
+.text input { font-family: var(--font-body); font-size: 14px; padding: 5px 8px; border: 1px solid var(--rule); border-bottom-color: var(--ink);
+  background: transparent; color: var(--ink); min-width: 0; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .actions button, .toggle { appearance: none; font-family: var(--font-body); font-size: 14px; padding: 8px 6px; cursor: pointer;
   background: transparent; color: var(--ink); border: 1px solid var(--ink); }
 .actions button:hover, .choices button:hover:not([aria-pressed="true"]) { background: var(--paper-deep); }
-.actions .wide { grid-column: span 2; }
+.actions button.rec { border-color: var(--cinnabar); color: var(--cinnabar); }
+.actions button.rec[aria-pressed="true"] { background: var(--cinnabar); color: #F4EFE3; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--cinnabar); outline-offset: 2px; }
 .note { font-size: 12px; line-height: 1.7; color: var(--ink-soft); margin: 0; }
 .toggle { display: none; }
@@ -83,15 +107,23 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cinnabar); 
     bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: auto; max-height: 56%; }
   .panel.closed .body { display: none; }
   .toggle { display: inline-block; padding: 4px 12px; font-size: 13px; }
+  body.sleeping .panel { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .panel { backdrop-filter: none; -webkit-backdrop-filter: none; } }
+@media (prefers-reduced-motion: reduce) { body.sleeping #ring { animation: none; } .panel { backdrop-filter: none; -webkit-backdrop-filter: none; } }
 </style>
 </head>
-<body>
-<div id="stage" aria-label="可拖动的水墨墨龙场景"></div>
+<body class="sleeping">
+<div id="stage" aria-label="水墨墨龙场景"></div>
+<canvas id="fx" aria-hidden="true"></canvas>
 <canvas id="grain" aria-hidden="true"></canvas>
+<div id="ring" aria-hidden="true"></div>
 <div class="title"><h1>山水墨龙</h1><div class="seal" aria-hidden="true">墨</div></div>
-<p class="byline">拖动画面转换视角，滚轮或双指缩放。龙、山、云全部由代码现场生成，不用任何外部模型。</p>
+<p class="byline">拖动画面转换视角，滚轮或双指缩放。龙、山、云和风雨雷声全部由代码现场生成，不用任何外部模型和音频。</p>
+<div class="intro">
+  <p>墨龙已成，只差点睛<small>点龙眼，或点下面的朱砂（有声音）</small></p>
+  <button class="dot" id="dotEye" aria-label="为墨龙点睛">点睛</button>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <aside class="panel" id="panel">
   <header>
@@ -101,11 +133,36 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cinnabar); 
   </header>
   <div class="body" id="panelBody">
     <fieldset>
+      <legend>玩法</legend>
+      <div class="choices" style="--n: 2" id="modes">
+        <button id="modePatrol" data-mode="patrol" aria-pressed="true">巡山</button>
+        <button id="modePearl" data-mode="pearl" aria-pressed="false">戏珠</button>
+      </div>
+    </fieldset>
+    <fieldset>
       <legend>视角</legend>
       <div class="choices" id="views">
         <button id="viewChase" data-view="chase" aria-pressed="true">跟拍</button>
         <button id="viewWide" data-view="wide" aria-pressed="false">远观</button>
         <button id="viewFree" data-view="free" aria-pressed="false">自由</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>时辰</legend>
+      <div class="choices" style="--n: 4" id="times">
+        <button id="timeDawn" data-time="dawn" aria-pressed="false">晨</button>
+        <button id="timeDay" data-time="day" aria-pressed="true">昼</button>
+        <button id="timeDusk" data-time="dusk" aria-pressed="false">暮</button>
+        <button id="timeNight" data-time="night" aria-pressed="false">夜</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>天气</legend>
+      <div class="choices" style="--n: 4" id="weathers">
+        <button id="wxClear" data-weather="clear" aria-pressed="true">晴</button>
+        <button id="wxRain" data-weather="rain" aria-pressed="false">雨</button>
+        <button id="wxSnow" data-weather="snow" aria-pressed="false">雪</button>
+        <button id="wxThunder" data-weather="thunder" aria-pressed="false">雷</button>
       </div>
     </fieldset>
     <fieldset>
@@ -125,16 +182,27 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--cinnabar); 
     </fieldset>
     <fieldset>
       <legend>风云</legend>
-      <label class="row" for="speed">飞速 <input id="speed" type="range" min="0" max="30" step="1" value="12"><output for="speed">12</output></label>
+      <label class="row" for="speed">飞速 <input id="speed" type="range" min="0" max="30" step="1" value="14"><output for="speed">14</output></label>
       <label class="row" for="wind">风力 <input id="wind" type="range" min="0" max="2.5" step="0.1" value="1"><output for="wind">1.0</output></label>
       <label class="row" for="mist">云雾 <input id="mist" type="range" min="0" max="1" step="0.05" value="0.6"><output for="mist">0.60</output></label>
+    </fieldset>
+    <fieldset>
+      <legend>留影</legend>
+      <label class="text" for="signature">落款 <input id="signature" type="text" maxlength="10" placeholder="存图时题在画上" autocomplete="off"></label>
+      <div class="actions">
+        <button id="snap">存一张图</button>
+        <button id="record" class="rec" aria-pressed="false">录六秒</button>
+        <button id="share">复制链接</button>
+        <button id="sound" aria-pressed="true">声音 开</button>
+      </div>
     </fieldset>
     <div class="actions">
       <button id="newDragon">换一条龙</button>
       <button id="newLand">换一片山</button>
-      <button id="pause" class="wide" aria-pressed="false">定格</button>
+      <button id="pause" aria-pressed="false">定格</button>
+      <button id="resleep">让它再睡</button>
     </div>
-    <p class="note">龙按教程的曲线建模法用代码搭出：身体沿曲线放样，鹿角、腮毛、胡须、干笔鬃毛逐根生成，沿飞行路线游动。峰林每座峰从脚到顶单独渐变，峰脊提亮，远山淡入雾中。</p>
+    <p class="note">龙按曲线建模法用代码搭出，身体沿龙头飞过的轨迹游动；风声、龙吟、雨雷、琴音都由浏览器现场合成。网址里记着这条龙和这片山，复制给别人，看到的是同一幅画。</p>
   </div>
 </aside>
 
@@ -181,24 +249,29 @@ stage.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(42, 1, .5, 3000);
 
-const state = { view: 'chase', palette: 'qinglv', length: 30, girth: 1.15, antler: 1, fur: 1, speed: 12, wind: 1, mist: .6,
-                dragonSeed: 731, landSeed: 8, paused: false, time: 0 };
+const state = { view: 'chase', mode: 'patrol', palette: 'qinglv', time: 'day', weather: 'clear', awake: false,
+                length: 30, girth: 1.15, antler: 1, fur: 1, speed: 14, wind: 1, mist: .6, dragonSeed: 731, landSeed: 8, paused: false };
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-if (reduceMotion) state.paused = true;
 
 const col = hex => { const c = new THREE.Color(hex); return new THREE.Vector3(c.r, c.g, c.b); };
 
 // ------------------------------------------------------------------ sky dome and moon
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false,
-  uniforms: { uZenith: { value: new THREE.Vector3() }, uHorizon: { value: new THREE.Vector3() }, uCloud: { value: new THREE.Vector3() }, uTime: { value: 0 } },
+  uniforms: { uZenith: { value: new THREE.Vector3() }, uHorizon: { value: new THREE.Vector3() }, uCloud: { value: new THREE.Vector3() }, uTime: { value: 0 },
+              uStars: { value: 0 }, uStorm: { value: 0 }, uFlash: { value: 0 } },
   vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
-  fragmentShader: NOISE + `uniform vec3 uZenith, uHorizon, uCloud; uniform float uTime; varying vec3 vDir;
+  fragmentShader: NOISE + `uniform vec3 uZenith, uHorizon, uCloud; uniform float uTime, uStars, uStorm, uFlash; varying vec3 vDir;
     void main(){ vec3 d = normalize(vDir); float h = clamp(d.y, -.2, 1.);
       vec3 c = mix(uHorizon, uZenith, smoothstep(.02, .6, h));
       vec2 q = d.xz / (max(d.y, 0.) + .22) * 1.4 + vec2(uTime * .006, 0.);
       float n = fbm(vec3(q, 1.7));
-      c = mix(c, uCloud, smoothstep(.5, .72, n) * smoothstep(-.02, .2, d.y) * .8);
+      c = mix(c, uCloud, smoothstep(.5 - uStorm * .25, .72 - uStorm * .2, n) * smoothstep(-.02, .2, d.y) * .8);
+      vec3 cell = floor(d * 260.);
+      float star = step(.9975, hash3(cell)) * smoothstep(.05, .3, d.y) * (1. - smoothstep(.5, .72, n));
+      c += uStars * star * vec3(.85, .86, .9);
+      c = mix(c, c * vec3(.62, .64, .68), uStorm);           // overcast for rain, snow and storms
+      c = mix(c, vec3(1.), uFlash);                          // lightning
       gl_FragColor = vec4(c, 1.); }`,
 });
 const sky = new THREE.Mesh(new THREE.SphereGeometry(1500, 32, 16), skyMat);
@@ -230,13 +303,13 @@ const mountainMat = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
   uniforms: { uFeet: { value: new THREE.Vector3() }, uMiddle: { value: new THREE.Vector3() }, uTop: { value: new THREE.Vector3() },
               uInk: { value: new THREE.Vector3() }, uHigh: { value: new THREE.Vector3() }, uHaze: { value: new THREE.Vector3() },
-              uFog: { value: .38 } },
+              uFog: { value: .38 }, uLight: { value: new THREE.Vector3(1, 1, 1) } },
   vertexShader: `attribute float rel; attribute float ridge; attribute float cavity;
     varying float vRel, vRidge, vCavity; varying vec3 vNormal, vView, vWorld;
     void main(){ vRel = rel; vRidge = ridge; vCavity = cavity; vWorld = position;
       vec4 mv = modelViewMatrix * vec4(position, 1.); vView = mv.xyz; vNormal = normalize(normalMatrix * normal);
       gl_Position = projectionMatrix * mv; }`,
-  fragmentShader: NOISE + `uniform vec3 uFeet, uMiddle, uTop, uInk, uHigh, uHaze; uniform float uFog;
+  fragmentShader: NOISE + `uniform vec3 uFeet, uMiddle, uTop, uInk, uHigh, uHaze, uLight; uniform float uFog;
     varying float vRel, vRidge, vCavity; varying vec3 vNormal, vView, vWorld;
     void main(){
       float fogNoise = fbm(vWorld * vec3(.09, .22, .09)) - .5;
@@ -251,6 +324,7 @@ const mountainMat = new THREE.ShaderMaterial({
       float jitter = fbm(vWorld * .25) - .5;
       float edge = facing + jitter * .28;
       if (edge > .8) c = uInk; else if (edge > .64) c = mix(c, uInk, .45);
+      c *= uLight;                                           // time of day
       float dist = length(vView);
       c = mix(c, uHaze, clamp((dist - 60.) / 260., 0., 1.) * .7);
       gl_FragColor = vec4(c, 1.); }`,
@@ -531,10 +605,10 @@ function buildDragon({ length, girth, antler, fur, seed }) {
     const angle = rng.uniform(0, 6.283);
     b.strand(lock([rng.uniform(0, length * .06), Math.cos(angle) * R * .1, Math.sin(angle) * R * .1], [-1, Math.cos(angle) * .5, Math.sin(angle) * .5], R * rng.uniform(1.5, 2.8), .1, .4, rng), R * .25);
   }
-  return { builder: b, headX: hx + 2 * H };
+  return { builder: b, headX: hx + 2 * H, eye: [hx + 1.12 * H, .4 * H, .38 * H] };
 }
 
-const dragonUniforms = { uInk: { value: col(DRAGON_INK) }, uPaper: { value: col('#EEF1EE') } };
+const dragonUniforms = { uInk: { value: col(DRAGON_INK) }, uPaper: { value: col('#EEF1EE') }, uDotted: { value: 0 } };
 const bodyMat = new THREE.ShaderMaterial({
   side: THREE.DoubleSide, uniforms: dragonUniforms,
   vertexShader: `attribute vec3 rest; varying vec3 vRest, vNormal, vView;
@@ -558,12 +632,15 @@ const furMat = new THREE.ShaderMaterial({
 const whiteMat = new THREE.ShaderMaterial({ uniforms: dragonUniforms, vertexShader: `void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
   fragmentShader: `uniform vec3 uPaper; void main(){ gl_FragColor = vec4(uPaper, 1.); }` });
 const pupilMat = new THREE.ShaderMaterial({ uniforms: dragonUniforms, vertexShader: `void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
-  fragmentShader: `uniform vec3 uInk; void main(){ gl_FragColor = vec4(uInk, 1.); }` });
+  fragmentShader: `uniform vec3 uInk; uniform float uDotted; void main(){ if (uDotted < .5) discard; gl_FragColor = vec4(uInk, 1.); }` });  // no pupils until the eyes are dotted
 
-let dragon = null; // { mesh, rest, restNormals, fur, count, headX }
+
+// ------------------------------------------------------------------ the dragon mesh
+let dragon = null; // { mesh, rest, restNormals, fur, count, xmax, eye }
 function makeDragon() {
-  const { builder: b, headX } = buildDragon({ length: state.length, girth: state.girth, antler: state.antler, fur: state.fur, seed: state.dragonSeed });
+  const { builder: b, eye } = buildDragon({ length: state.length, girth: state.girth, antler: state.antler, fur: state.fur, seed: state.dragonSeed });
   const rest = new Float32Array(b.pos), count = rest.length / 3;
+  let xmax = -1e9; for (let i = 0; i < count; i++) xmax = Math.max(xmax, rest[i * 3]);
   const order = ['body', 'white', 'pupil', 'fur'];
   const index = []; const geometry = new THREE.BufferGeometry();
   let start = 0;
@@ -577,49 +654,156 @@ function makeDragon() {
   const mesh = new THREE.Mesh(geometry, [bodyMat, whiteMat, pupilMat, furMat]);
   mesh.frustumCulled = false;
   if (dragon) { scene.remove(dragon.mesh); dragon.mesh.geometry.dispose(); }
-  dragon = { mesh, rest, restNormals, fur: new Float32Array(b.fur), count, headX, distance: dragon ? dragon.distance : 0 };
+  dragon = { mesh, rest, restNormals, fur: new Float32Array(b.fur), count, xmax, eye };
   scene.add(mesh);
   updateCatalogue();
 }
 
-const F = { points: [0, 0, 0], tangents: [0, 0, 0], sides: [0, 0, 0], ups: [0, 0, 0] };
+// ------------------------------------------------------------------ motion: the head steers, the body follows the head's trail
+const STEP = .35, TABLE = 360;
+const motion = { head: new THREE.Vector3(), vel: new THREE.Vector3(), trail: [], phase: 'sleeping', phaseTime: 0, pathS: 0,
+                 table: { length: 1, p: new Float32Array(TABLE * 3), t: new Float32Array(TABLE * 3), s: new Float32Array(TABLE * 3), u: new Float32Array(TABLE * 3) } };
+const trailLength = () => dragon.xmax + 70; // body plus room for the chase camera behind it
+
+function coilTrail() { // asleep: coiled on the clouds at the centre of the range, head raised
+  motion.trail = [];
+  for (let d = 0; d <= trailLength(); d += STEP) {
+    const a = .6 + d / (8.5 + d * .05), r = 8.5 + d * .06;
+    motion.trail.push(new THREE.Vector3(Math.cos(a) * r, 20 - d * .085 + Math.max(0, 5 - d) * .7, Math.sin(a) * r));
+  }
+  motion.head.copy(motion.trail[0]);
+  motion.vel.subVectors(motion.trail[0], motion.trail[1]).normalize();
+}
+
+function rebuildTable() {
+  const T = motion.table, trail = motion.trail, L = trailLength();
+  T.length = L;
+  const cum = [0];
+  for (let i = 1; i < trail.length; i++) cum.push(cum[i - 1] + trail[i].distanceTo(trail[i - 1]));
+  let seg = 1;
+  const back = trail.length > 1 ? new THREE.Vector3().subVectors(trail[trail.length - 1], trail[trail.length - 2]).normalize() : new THREE.Vector3(-1, 0, 0);
+  const q = new THREE.Vector3();
+  for (let k = 0; k < TABLE; k++) {
+    const d = k / (TABLE - 1) * L;
+    if (d >= cum[cum.length - 1]) q.copy(trail[trail.length - 1]).addScaledVector(back, d - cum[cum.length - 1]); // not yet flown that far: extend straight
+    else { while (cum[seg] < d) seg++; const w = (d - cum[seg - 1]) / Math.max(1e-6, cum[seg] - cum[seg - 1]); q.copy(trail[seg - 1]).lerp(trail[seg], w); }
+    T.p[k * 3] = q.x; T.p[k * 3 + 1] = q.y; T.p[k * 3 + 2] = q.z;
+  }
+  const up = new THREE.Vector3(0, 1, 0), t = new THREE.Vector3(), s = new THREE.Vector3(), u = new THREE.Vector3(), a = new THREE.Vector3(), b2 = new THREE.Vector3();
+  for (let k = 0; k < TABLE; k++) {
+    const i0 = Math.max(0, k - 1), i1 = Math.min(TABLE - 1, k + 1);
+    a.fromArray(T.p, i0 * 3); b2.fromArray(T.p, i1 * 3);
+    t.subVectors(a, b2); if (t.lengthSq() < 1e-8) t.set(1, 0, 0); t.normalize();       // forward: toward the head
+    s.crossVectors(up, t); if (s.lengthSq() < 1e-6) s.set(0, 0, 1); s.normalize();
+    u.crossVectors(t, s).normalize();
+    t.toArray(T.t, k * 3); s.toArray(T.s, k * 3); u.toArray(T.u, k * 3);
+  }
+}
+function sampleTable(d, out) {
+  const T = motion.table, f = Math.max(0, Math.min(TABLE - 1.001, d / T.length * (TABLE - 1))), i = Math.floor(f), w = f - i, j = i + 1;
+  for (const [key, arr] of [['p', T.p], ['t', T.t], ['s', T.s], ['u', T.u]]) {
+    out[key][0] = arr[i * 3] * (1 - w) + arr[j * 3] * w; out[key][1] = arr[i * 3 + 1] * (1 - w) + arr[j * 3 + 1] * w; out[key][2] = arr[i * 3 + 2] * (1 - w) + arr[j * 3 + 2] * w;
+  }
+  return out;
+}
+
+const tmpTarget = new THREE.Vector3(), desired = new THREE.Vector3(), steerV = new THREE.Vector3();
+function nearestPathS(p) { let best = 0, bd = 1e9; for (let k = 0; k < 240; k++) { const s = k / 240 * PATH.length; const q = path.getPointAt(s / PATH.length); const d = q.distanceTo(p); if (d < bd) { bd = d; best = s; } } return best; }
+function steer(dt) {
+  if (motion.phase === 'sleeping' || dt <= 0) return;
+  motion.phaseTime += dt;
+  let speed = Math.max(state.speed, motion.phase === 'waking' ? 10 : 0);
+  if (speed <= 0) return;
+  if (motion.phase === 'waking') { // rise steeply out of the coil, then join the patrol loop or chase the pearl
+    tmpTarget.copy(motion.head).add(new THREE.Vector3(motion.vel.x * 20, 26, motion.vel.z * 20));
+    if (motion.phaseTime > 1.6) { motion.phase = 'flying'; motion.pathS = nearestPathS(motion.head); }
+  } else if (state.mode === 'pearl') {
+    tmpTarget.copy(pearl.position);
+    const d = tmpTarget.distanceTo(motion.head);
+    speed *= Math.max(.35, Math.min(1.25, d / 14));
+  } else {
+    const lag = path.getPointAt(((motion.pathS % PATH.length) + PATH.length) % PATH.length / PATH.length).distanceTo(motion.head);
+    motion.pathS += speed * dt * (lag > 50 ? .5 : 1);
+    tmpTarget.copy(path.getPointAt((((motion.pathS + 32) % PATH.length) + PATH.length) % PATH.length / PATH.length));
+  }
+  desired.subVectors(tmpTarget, motion.head); if (desired.lengthSq() < 1e-6) return;
+  desired.normalize().multiplyScalar(speed);
+  steerV.subVectors(desired, motion.vel);
+  const turn = speed * (motion.phase === 'waking' ? 2.6 : 1.7) * dt;
+  if (steerV.length() > turn) steerV.setLength(turn);
+  motion.vel.add(steerV);
+  motion.vel.y = Math.max(-.55 * speed, Math.min(.6 * speed, motion.vel.y));
+  if (motion.head.y < 13) motion.vel.y += (13 - motion.head.y) * 2.2 * dt;
+  if (motion.head.y > 60) motion.vel.y -= (motion.head.y - 60) * 2 * dt;
+  const r = Math.hypot(motion.head.x, motion.head.z);
+  if (r > 170) { motion.vel.x -= motion.head.x / r * speed * dt; motion.vel.z -= motion.head.z / r * speed * dt; }
+  motion.vel.setLength(speed);
+  motion.head.addScaledVector(motion.vel, dt);
+  const trail = motion.trail;
+  if (trail[0].distanceTo(trail[1]) >= STEP) trail.unshift(motion.head.clone()); else trail[0].copy(motion.head);
+  let total = 0;
+  for (let i = 1; i < trail.length; i++) { total += trail[i].distanceTo(trail[i - 1]); if (total > trailLength() + 4) { trail.length = i + 1; break; } }
+}
+
+const F = { p: [0, 0, 0], t: [0, 0, 0], s: [0, 0, 0], u: [0, 0, 0] };
 function bendDragon(t) {
-  const { mesh, rest, restNormals, fur, count } = dragon;
+  const { mesh, rest, restNormals, fur, count, xmax } = dragon;
   const pos = mesh.geometry.getAttribute('position'), nor = mesh.geometry.getAttribute('normal');
-  const P = pos.array, N = nor.array, wind = state.wind;
+  const P = pos.array, N = nor.array, wind = state.wind * (motion.phase === 'sleeping' ? .35 : 1);
   for (let i = 0; i < count; i++) {
     const x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2];
-    frameAt(dragon.distance + x, F);
+    sampleTable(xmax - x, F);
     let ly = y, lz = z;
     const w = fur[i];
     if (w > 0) { // flutter: two lifting waves and one sway, each with its own speed and wavelength
       lz += w * wind * (.18 * Math.sin(t * 5.6 - x * 1.1) + .14 * Math.sin(t * 4.4 - y * 1.6 + x * .3));
       ly += w * wind * .16 * Math.sin(t * 8.2 - x * 1.8);
     }
-    const T = F.tangents, Sd = F.sides, U = F.ups, p = F.points;
-    P[i * 3] = p[0] + Sd[0] * ly + U[0] * lz; P[i * 3 + 1] = p[1] + Sd[1] * ly + U[1] * lz; P[i * 3 + 2] = p[2] + Sd[2] * ly + U[2] * lz;
+    const T = F.t, S = F.s, U = F.u, p = F.p;
+    P[i * 3] = p[0] + S[0] * ly + U[0] * lz; P[i * 3 + 1] = p[1] + S[1] * ly + U[1] * lz; P[i * 3 + 2] = p[2] + S[2] * ly + U[2] * lz;
     const nx = restNormals[i * 3], ny = restNormals[i * 3 + 1], nz = restNormals[i * 3 + 2];
-    N[i * 3] = T[0] * nx + Sd[0] * ny + U[0] * nz; N[i * 3 + 1] = T[1] * nx + Sd[1] * ny + U[1] * nz; N[i * 3 + 2] = T[2] * nx + Sd[2] * ny + U[2] * nz;
+    N[i * 3] = T[0] * nx + S[0] * ny + U[0] * nz; N[i * 3 + 1] = T[1] * nx + S[1] * ny + U[1] * nz; N[i * 3 + 2] = T[2] * nx + S[2] * ny + U[2] * nz;
   }
   pos.needsUpdate = true; nor.needsUpdate = true;
 }
+function localToWorld(x, y, z, out) { sampleTable(dragon.xmax - x, F); for (let k = 0; k < 3; k++) out[k] = F.p[k] + F.s[k] * y + F.u[k] * z; return out; }
+
+// ------------------------------------------------------------------ the pearl (戏珠)
+function pearlTexture() {
+  const size = 128, c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
+  const glow = g.createRadialGradient(64, 64, 6, 64, 64, 64); glow.addColorStop(0, 'rgba(255,236,170,1)'); glow.addColorStop(.32, 'rgba(240,150,70,.95)');
+  glow.addColorStop(.5, 'rgba(200,60,40,.55)'); glow.addColorStop(1, 'rgba(200,60,40,0)'); g.fillStyle = glow; g.fillRect(0, 0, size, size);
+  g.strokeStyle = 'rgba(30,20,18,.75)'; g.lineWidth = 3; // an ink flame curling round the pearl
+  for (let k = 0; k < 3; k++) { g.beginPath(); for (let a = 0; a < 4.2; a += .1) { const r = 24 + a * 6; const x = 64 + Math.cos(a + k * 2.1) * r * .6, y = 64 + Math.sin(a + k * 2.1) * r * .6; a ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace; return t;
+}
+const pearl = new THREE.Sprite(new THREE.SpriteMaterial({ map: pearlTexture(), depthWrite: false, transparent: true }));
+pearl.scale.set(9, 9, 1); pearl.visible = false; pearl.position.set(0, 26, 40);
+scene.add(pearl);
+const pearlGoal = new THREE.Vector3(0, 26, 40);
+let caughtAt = -10;
 
 // ------------------------------------------------------------------ cameras
 const orbit = { theta: .6, phi: 1.18, radius: 170, target: new THREE.Vector3(0, 18, 0) };
 const chase = { pos: new THREE.Vector3(), look: new THREE.Vector3(), ready: false };
-const tmpA = { points: [0, 0, 0], tangents: [0, 0, 0], sides: [0, 0, 0], ups: [0, 0, 0] };
-function placeCamera(dt) {
+const C = { p: [0, 0, 0], t: [0, 0, 0], s: [0, 0, 0], u: [0, 0, 0] };
+function placeCamera(dt, t) {
+  if (motion.phase === 'sleeping') {
+    const head = new THREE.Vector3(...localToWorld(dragon.xmax - 3, 0, 0, [0, 0, 0]));
+    const a = .9 + Math.sin(t * .07) * .25;
+    camera.position.set(head.x + Math.cos(a) * 26, head.y + 24, head.z + Math.sin(a) * 26); // look down so the coil reads
+    camera.lookAt(head.x * .6, head.y - 6, head.z * .6); chase.ready = false; return;
+  }
   if (state.view === 'chase') {
-    const head = dragon.distance + dragon.headX;
-    frameAt(head, tmpA);
-    const look = new THREE.Vector3(...tmpA.points).addScaledVector(new THREE.Vector3(...tmpA.ups), 1.5);
-    frameAt(head - 42, tmpA);
-    const want = new THREE.Vector3(...tmpA.points).addScaledVector(new THREE.Vector3(...tmpA.sides), -18).addScaledVector(new THREE.Vector3(...tmpA.ups), 10);
-    const k = chase.ready ? 1 - Math.exp(-dt * 3) : 1;
+    sampleTable(4, C);
+    const look = new THREE.Vector3(...C.p).addScaledVector(new THREE.Vector3(...C.u), 1.5);
+    sampleTable(46, C);
+    const want = new THREE.Vector3(...C.p).addScaledVector(new THREE.Vector3(...C.s), -18).addScaledVector(new THREE.Vector3(...C.u), 10);
+    const k = chase.ready ? 1 - Math.exp(-dt * 2.6) : 1;
     chase.pos.lerp(want, k); chase.look.lerp(look, k); chase.ready = true;
     camera.position.copy(chase.pos); camera.lookAt(chase.look);
   } else if (state.view === 'wide') {
-    camera.position.set(0, 46, 175); camera.lookAt(0, 16, 0);
+    camera.position.set(0, 52, 178); camera.lookAt(0, 20, 0);
   } else {
     const s = Math.sin(orbit.phi);
     camera.position.set(orbit.target.x + orbit.radius * s * Math.sin(orbit.theta), orbit.target.y + orbit.radius * Math.cos(orbit.phi), orbit.target.z + orbit.radius * s * Math.cos(orbit.theta));
@@ -627,12 +811,27 @@ function placeCamera(dt) {
   }
 }
 
-// pointer: drag to look around (switches to free view), wheel / pinch to zoom
+// pointer: drag to look around; in 戏珠 the pointer leads the pearl; asleep, a tap on the eye dots it
 const pointers = new Map(); let pinch = 0;
 const canvas = renderer.domElement;
-canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
-  if (state.view !== 'free') { const d = camera.position.clone().sub(orbit.target); orbit.radius = Math.min(320, Math.max(40, d.length())); orbit.theta = Math.atan2(d.x, d.z); orbit.phi = Math.acos(Math.max(-1, Math.min(1, d.y / orbit.radius))); setView('free'); } });
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(), hit = new THREE.Vector3();
+function pointerToPearl(e) {
+  ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const facing = camera.getWorldDirection(new THREE.Vector3()).negate();
+  const anchor = state.view === 'chase' ? motion.head : orbit.target;
+  plane.setFromNormalAndCoplanarPoint(facing, anchor);
+  if (ray.ray.intersectPlane(plane, hit)) { hit.y = Math.max(12, Math.min(58, hit.y)); pearlGoal.copy(hit); }
+}
+canvas.addEventListener('pointerdown', e => {
+  Sound.init();
+  if (motion.phase === 'sleeping') { const r = document.getElementById('ring').getBoundingClientRect(); if (Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) < 70) awaken(); else toast('点在朱圈里的龙眼上'); return; }
+  canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (state.mode === 'pearl') { pointerToPearl(e); return; }
+  if (state.view !== 'free') { const d = camera.position.clone().sub(orbit.target); orbit.radius = Math.min(320, Math.max(40, d.length())); orbit.theta = Math.atan2(d.x, d.z); orbit.phi = Math.acos(Math.max(-1, Math.min(1, d.y / orbit.radius))); setView('free'); }
+});
 canvas.addEventListener('pointermove', e => {
+  if (state.mode === 'pearl' && motion.phase !== 'sleeping' && (e.pointerType === 'mouse' || pointers.has(e.pointerId))) { pointerToPearl(e); return; }
   if (!pointers.has(e.pointerId)) return;
   const [px, py] = pointers.get(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
   if (pointers.size === 1) { orbit.theta -= (e.clientX - px) * .005; orbit.phi = Math.min(1.5, Math.max(.35, orbit.phi - (e.clientY - py) * .004)); }
@@ -642,68 +841,350 @@ const release = e => { pointers.delete(e.pointerId); if (pointers.size < 2) pinc
 canvas.addEventListener('pointerup', release); canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('wheel', e => { e.preventDefault(); if (state.view !== 'free') return; orbit.radius = Math.min(320, Math.max(40, orbit.radius * (1 + e.deltaY * .001))); }, { passive: false });
 
-// ------------------------------------------------------------------ palette, grain, resize
-function applyPalette() {
-  const p = PALETTES[state.palette];
-  for (const [k, key] of [['uFeet', 'feet'], ['uMiddle', 'middle'], ['uTop', 'top'], ['uInk', 'ink'], ['uHigh', 'highlight'], ['uHaze', 'haze']]) mountainMat.uniforms[k].value = col(p[key]);
-  skyMat.uniforms.uZenith.value = col(p.zenith); skyMat.uniforms.uHorizon.value = col(p.horizon); skyMat.uniforms.uCloud.value = col(p.cloud);
-  cloudLayers.forEach(m => { m.material.uniforms.uColor.value = col(p.cloud); });
+// ------------------------------------------------------------------ sound: everything synthesised in the browser
+const Sound = (() => {
+  let ctx = null, master, verb, recDest, windGain, windFilter, rainGain, enabled = true;
+  const noise = (seconds, brown) => { const n = Math.floor(ctx.sampleRate * seconds), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0); let last = 0;
+    for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; if (brown) { last = (last + .02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w; } return b; };
+  const impulse = (seconds, decay) => { const n = Math.floor(ctx.sampleRate * seconds), b = ctx.createBuffer(2, n, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); } return b; };
+  const send = (node, wet) => { node.connect(master); if (wet) { const g = ctx.createGain(); g.gain.value = wet; node.connect(g); g.connect(verb); } };
+  const envelope = (gain, t, attack, peak, hold, release) => { gain.setValueAtTime(.0001, t); gain.exponentialRampToValueAtTime(peak, t + attack); gain.setValueAtTime(peak, t + attack + hold); gain.exponentialRampToValueAtTime(.0001, t + attack + hold + release); };
+  function init() {
+    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    ctx = new AC();
+    master = ctx.createGain(); master.gain.value = enabled ? .9 : 0;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4;
+    master.connect(comp); comp.connect(ctx.destination);
+    if (ctx.createMediaStreamDestination) { recDest = ctx.createMediaStreamDestination(); comp.connect(recDest); }
+    verb = ctx.createConvolver(); verb.buffer = impulse(3.4, 2.8); const back = ctx.createGain(); back.gain.value = .6; verb.connect(back); back.connect(master);
+    const wind = ctx.createBufferSource(); wind.buffer = noise(6, true); wind.loop = true;
+    windFilter = ctx.createBiquadFilter(); windFilter.type = 'bandpass'; windFilter.frequency.value = 420; windFilter.Q.value = .8;
+    windGain = ctx.createGain(); windGain.gain.value = 0; wind.connect(windFilter); windFilter.connect(windGain); send(windGain, .15); wind.start();
+    const rain = ctx.createBufferSource(); rain.buffer = noise(4, false); rain.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1300; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7500;
+    rainGain = ctx.createGain(); rainGain.gain.value = 0; rain.connect(hp); hp.connect(lp); lp.connect(rainGain); send(rainGain, .1); rain.start();
+  }
+  function update(t, wind, speed, weather, sleeping) {
+    if (!ctx) return;
+    const now = ctx.currentTime, gust = .5 + .5 * Math.sin(t * .37) * Math.sin(t * .13 + 1.3);
+    const level = (sleeping ? .03 : .04 + .09 * Math.min(2, wind) * (.4 + .6 * gust) * (.55 + speed / 26)) * (weather === 'snow' ? .6 : 1);
+    windGain.gain.setTargetAtTime(level, now, .4);
+    windFilter.frequency.setTargetAtTime(260 + 650 * gust * Math.min(1.6, wind) + speed * 9, now, .5);
+    rainGain.gain.setTargetAtTime(weather === 'rain' ? .16 : weather === 'thunder' ? .22 : 0, now, .8);
+  }
+  function drop() { // a single drop of ink onto the eye
+    if (!ctx) return; const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(1250, t); o.frequency.exponentialRampToValueAtTime(330, t + .09); envelope(g.gain, t, .004, .35, .02, .3);
+    o.connect(g); send(g, .5); o.start(t); o.stop(t + .5);
+  }
+  function boom(at = 0) { // the burst of ink when the dragon wakes
+    if (!ctx) return; const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(36, t + .8); envelope(g.gain, t, .01, .9, .05, 1.3);
+    o.connect(g); send(g, .45); o.start(t); o.stop(t + 1.6);
+    const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), ng = ctx.createGain(); n.buffer = noise(1.2, true); f.type = 'lowpass'; f.frequency.value = 380;
+    envelope(ng.gain, t, .005, .7, .02, .6); n.connect(f); f.connect(ng); send(ng, .5); n.start(t);
+  }
+  function roar(at = 0) { // growl: two detuned saws, tremolo, distortion, three vocal formants, breath, long valley echo
+    if (!ctx) return; const t = ctx.currentTime + at, out = ctx.createGain(); envelope(out.gain, t, .28, .5, 1.1, 1.7);
+    const shaper = ctx.createWaveShaper(), curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 6); } shaper.curve = curve;
+    const amp = ctx.createGain(); amp.gain.value = .6; const trem = ctx.createOscillator(), depth = ctx.createGain(); trem.frequency.value = 16; depth.gain.value = .32; trem.connect(depth); depth.connect(amp.gain);
+    for (const ratio of [1, 1.49, .5]) { const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(50 * ratio, t); o.frequency.linearRampToValueAtTime(94 * ratio, t + .5); o.frequency.exponentialRampToValueAtTime(42 * ratio, t + 3);
+      o.connect(amp); o.start(t); o.stop(t + 3.2); }
+    amp.connect(shaper);
+    for (const [freq, q, level] of [[320, 3, .9], [860, 4, .55], [1900, 5, .22]]) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+      const lv = ctx.createGain(); lv.gain.value = level; shaper.connect(bp); bp.connect(lv); lv.connect(out); }
+    const breath = ctx.createBufferSource(), bf = ctx.createBiquadFilter(), bg = ctx.createGain(); breath.buffer = noise(3.2, true); bf.type = 'bandpass'; bf.frequency.value = 650; bf.Q.value = .7;
+    envelope(bg.gain, t, .2, .5, 1, 1.6); breath.connect(bf); bf.connect(bg); bg.connect(out); breath.start(t);
+    trem.start(t); trem.stop(t + 3.2); send(out, .75);
+  }
+  function thunder(near = 1) {
+    if (!ctx) return; const t = ctx.currentTime;
+    const crack = ctx.createBufferSource(), hp = ctx.createBiquadFilter(), cg = ctx.createGain(); crack.buffer = noise(1, false); hp.type = 'highpass'; hp.frequency.value = 1600;
+    envelope(cg.gain, t, .003, .45 * near, .02, .35); crack.connect(hp); hp.connect(cg); send(cg, .5); crack.start(t);
+    const rumble = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), rg = ctx.createGain(); rumble.buffer = noise(5, true); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(85, t + 2.8);
+    const curve = new Float32Array(64); for (let i = 0; i < 64; i++) curve[i] = Math.max(.0001, Math.pow(1 - i / 63, 1.6) * (.6 + .4 * Math.random()) * .95);
+    rg.gain.setValueCurveAtTime(curve, t + .05, 4.6); rumble.connect(lp); lp.connect(rg); send(rg, .5); rumble.start(t);
+  }
+  function pluck(freq, volume = .16) { // guqin-like string: Karplus-Strong delay loop
+    if (!ctx) return; const t = ctx.currentTime, burst = ctx.createBufferSource(), b = ctx.createBuffer(1, Math.floor(ctx.sampleRate * .03), ctx.sampleRate);
+    const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length); burst.buffer = b;
+    const delay = ctx.createDelay(1); delay.delayTime.value = 1 / freq; const fb = ctx.createGain(); fb.gain.value = .988; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = freq * 5;
+    const out = ctx.createGain(); out.gain.setValueAtTime(volume, t); out.gain.exponentialRampToValueAtTime(.0001, t + 3.4);
+    burst.connect(delay); delay.connect(lp); lp.connect(fb); fb.connect(delay); lp.connect(out); send(out, .4); burst.start(t);
+    setTimeout(() => { try { fb.disconnect(); out.disconnect(); } catch (e) {} }, 3800);
+  }
+  function chime() { if (!ctx) return; const t = ctx.currentTime; for (const [f, v] of [[1318, .07], [1976, .045]]) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; envelope(g.gain, t, .005, v, .01, 1.6); o.connect(g); send(g, .5); o.start(t); o.stop(t + 1.8); } }
+  return { init, update, drop, boom, roar, thunder, pluck, chime,
+           stream: () => recDest ? recDest.stream : null,
+           setEnabled(v) { enabled = v; if (master) master.gain.setTargetAtTime(v ? .9 : 0, ctx.currentTime, .05); } };
+})();
+const PENTATONIC = [196, 220, 261.63, 293.66, 329.63, 392, 440];
+
+// ------------------------------------------------------------------ the fx layer: ink bursts, rain, snow, lightning, shake
+const fx = document.getElementById('fx'), fxg = fx.getContext('2d');
+const bursts = [], bolts = []; let flash = 0, shake = 0, nextBolt = 3;
+function inkBurst(x, y, radius, colour = 'rgba(18,16,15,', seed = Math.random() * 1e6) {
+  const rng = rngFrom(Math.floor(seed)), lobes = [], spikes = [], drops = [];
+  const ph = [rng.uniform(0, 6), rng.uniform(0, 6), rng.uniform(0, 6)];
+  for (let k = 0; k < 72; k++) { const a = k / 72 * Math.PI * 2; lobes.push(.78 + .16 * Math.sin(a * 4 + ph[0]) + .08 * Math.sin(a * 9 + ph[1]) + .05 * Math.sin(a * 23 + ph[2])); }
+  for (let k = 0; k < 15; k++) spikes.push([rng.uniform(0, Math.PI * 2), Math.pow(rng.uniform(1.05, 2.2), 1.2), rng.uniform(.08, .2)]);
+  for (let k = 0; k < 34; k++) drops.push([rng.uniform(0, Math.PI * 2), rng.uniform(1.05, 2.35), rng.uniform(.014, .07)]);
+  bursts.push({ x, y, radius, colour, lobes, spikes, drops, born: clock });
+}
+function drawBursts() {
+  for (let i = bursts.length - 1; i >= 0; i--) {
+    const b = bursts[i], age = clock - b.born, grow = 1 - Math.pow(1 - Math.min(1, age / .32), 3), fade = Math.max(0, 1 - Math.max(0, age - 1.1) / .9);
+    if (fade <= 0) { bursts.splice(i, 1); continue; }
+    const R = b.radius * grow; fxg.fillStyle = b.colour + (fade * .96) + ')';
+    fxg.beginPath(); b.lobes.forEach((l, k) => { const a = k / b.lobes.length * Math.PI * 2; const x = b.x + Math.cos(a) * R * l, y = b.y + Math.sin(a) * R * l; k ? fxg.lineTo(x, y) : fxg.moveTo(x, y); }); fxg.fill();
+    for (const [a, len, w] of b.spikes) { const L = R * len, W = b.radius * w; fxg.beginPath();
+      fxg.moveTo(b.x + Math.cos(a - .5) * W * .4 + Math.cos(a) * R * .6, b.y + Math.sin(a - .5) * W * .4 + Math.sin(a) * R * .6);
+      fxg.lineTo(b.x + Math.cos(a) * L, b.y + Math.sin(a) * L);
+      fxg.lineTo(b.x + Math.cos(a + .5) * W * .4 + Math.cos(a) * R * .6, b.y + Math.sin(a + .5) * W * .4 + Math.sin(a) * R * .6); fxg.fill(); }
+    for (const [a, d, s] of b.drops) { const r = b.radius * s * grow; fxg.beginPath(); fxg.ellipse(b.x + Math.cos(a) * R * d, b.y + Math.sin(a) * R * d, r * 1.6, r, a, 0, Math.PI * 2); fxg.fill(); }
+  }
+}
+const rainDrops = Array.from({ length: 280 }, () => ({ x: Math.random(), y: Math.random(), l: .6 + Math.random() * .8, v: .8 + Math.random() * .6 }));
+const flakes = Array.from({ length: 240 }, () => ({ x: Math.random(), y: Math.random(), r: .6 + Math.random() * 1.8, v: .3 + Math.random() * .5, ph: Math.random() * 6 }));
+function drawWeather(dt, W, H) {
+  if (state.weather === 'rain' || state.weather === 'thunder') {
+    const slant = .12 + state.wind * .12; fxg.strokeStyle = 'rgba(48,56,70,.32)'; fxg.lineWidth = 1.1; fxg.beginPath();
+    for (const d of rainDrops) { d.y += d.v * dt * 1.6; d.x += slant * d.v * dt * 1.6; if (d.y > 1.05) { d.y = -.05; d.x = Math.random() * 1.2 - .1; } if (d.x > 1.05) d.x -= 1.1;
+      const x = d.x * W, y = d.y * H, len = d.l * 26; fxg.moveTo(x, y); fxg.lineTo(x - slant * len, y - len); }
+    fxg.stroke();
+  } else if (state.weather === 'snow') {
+    fxg.fillStyle = 'rgba(255,255,255,.92)'; fxg.strokeStyle = 'rgba(60,64,72,.12)';
+    for (const f of flakes) { f.y += f.v * dt * .12; f.x += (Math.sin(clock * .8 + f.ph) * .02 + state.wind * .015) * dt; if (f.y > 1.02) { f.y = -.02; f.x = Math.random(); } if (f.x > 1.02) f.x -= 1.04;
+      fxg.beginPath(); fxg.arc(f.x * W, f.y * H, f.r * 1.4, 0, Math.PI * 2); fxg.fill(); fxg.stroke(); }
+  }
+}
+function lightning(W, H) {
+  const x0 = W * (.15 + Math.random() * .7), pts = [[x0, -10]]; let x = x0, y = -10; const end = H * (.42 + Math.random() * .2);
+  while (y < end) { y += 18 + Math.random() * 30; x += (Math.random() - .5) * 60; pts.push([x, y]); }
+  const branches = []; for (let k = 2; k < pts.length - 2; k += 3) if (Math.random() < .6) { let [bx, by] = pts[k]; const br = [[bx, by]]; for (let s = 0; s < 4; s++) { bx += (Math.random() - .3) * 40 * (Math.random() < .5 ? -1 : 1); by += 14 + Math.random() * 20; br.push([bx, by]); } branches.push(br); }
+  bolts.push({ pts, branches, born: clock }); flash = 1; shake = Math.max(shake, .35);
+  setTimeout(() => Sound.thunder(.6 + Math.random() * .4), 150 + Math.random() * 600);
+}
+function drawBolts() {
+  for (let i = bolts.length - 1; i >= 0; i--) { const b = bolts[i], age = clock - b.born; if (age > .45) { bolts.splice(i, 1); continue; }
+    const on = age < .08 || (age > .14 && age < .22) || (age > .3 && age < .36);
+    if (!on) continue;
+    for (const [w, c] of [[7, 'rgba(18,16,15,.55)'], [2.4, 'rgba(255,255,255,.95)']]) { fxg.lineWidth = w; fxg.strokeStyle = c;
+      for (const line of [b.pts, ...b.branches]) { fxg.beginPath(); line.forEach(([x, y], k) => k ? fxg.lineTo(x, y) : fxg.moveTo(x, y)); fxg.stroke(); } } }
+  if (flash > 0) { fxg.fillStyle = `rgba(255,255,255,${flash * .55})`; fxg.fillRect(0, 0, fx.width, fx.height); }
+}
+
+// ------------------------------------------------------------------ time of day and weather
+const TIMES = {
+  dawn:  { horizon: '#F3DCC6', zenith: '#BCC8D6', haze: '#EBD8CA', cloud: '#FBF0E6', light: [1.04, .95, .9], sun: '#F0A27C', dir: [.78, .1, -.62], size: 120, stars: 0 },
+  day:   null,
+  dusk:  { horizon: '#ECB28C', zenith: '#8C93B6', haze: '#E0B7A1', cloud: '#F5D7C3', light: [1.0, .8, .72], sun: '#D9533B', dir: [-.82, .07, -.57], size: 175, stars: 0 },
+  night: { horizon: '#3E485E', zenith: '#141926', haze: '#394257', cloud: '#7F899D', light: [.44, .5, .64], sun: '#F3EEDD', dir: [-.42, .42, -.8], size: 115, stars: 1 },
+};
+const WEATHER_SKY = { clear: 0, rain: .45, snow: .22, thunder: .7 };
+const sunDir = new THREE.Vector3();
+function applyLook() {
+  const p = PALETTES[state.palette], tod = TIMES[state.time];
+  const sky = tod || { horizon: p.horizon, zenith: p.zenith, haze: p.haze, cloud: p.cloud, light: [1, 1, 1], sun: p.moon, dir: [-.55, .32, -.77], size: 150, stars: 0 };
+  for (const [k, key] of [['uFeet', 'feet'], ['uMiddle', 'middle'], ['uTop', 'top'], ['uInk', 'ink'], ['uHigh', 'highlight']]) mountainMat.uniforms[k].value = col(p[key]);
+  mountainMat.uniforms.uHaze.value = col(sky.haze);
+  mountainMat.uniforms.uLight.value = new THREE.Vector3(...sky.light);
+  skyMat.uniforms.uZenith.value = col(sky.zenith); skyMat.uniforms.uHorizon.value = col(sky.horizon); skyMat.uniforms.uCloud.value = col(sky.cloud);
+  skyMat.uniforms.uStars.value = sky.stars; skyMat.uniforms.uStorm.value = WEATHER_SKY[state.weather];
+  const cloudCol = col(sky.cloud).multiply(new THREE.Vector3(...sky.light).addScalar(1).multiplyScalar(.5));
+  cloudLayers.forEach(m => { m.material.uniforms.uColor.value = cloudCol; m.material.uniforms.uDensity.value = Math.min(1, state.mist + WEATHER_SKY[state.weather] * .5); });
   dragonUniforms.uPaper.value = col(p.paper);
-  moon.material.map.dispose(); moon.material.map = moonTexture(p.moon); moon.material.needsUpdate = true;
-  scene.background = new THREE.Color(p.horizon);
+  moon.material.map.dispose(); moon.material.map = moonTexture(sky.sun); moon.material.needsUpdate = true;
+  moon.scale.set(sky.size, sky.size, 1); sunDir.set(...sky.dir).normalize();
+  moon.visible = state.weather === 'clear' || state.weather === 'snow';
+  scene.background = new THREE.Color(sky.horizon);
   document.documentElement.style.setProperty('--paper', p.paper);
 }
+
+// ------------------------------------------------------------------ waking, sleeping
+function eyeScreen() {
+  const e = dragon.eye, v = new THREE.Vector3(), best = { x: 0, y: 0, z: 1e9 };
+  for (const side of [-1, 1]) { v.fromArray(localToWorld(e[0], side * e[1], e[2], [0, 0, 0])); const dist = v.distanceTo(camera.position); v.project(camera);
+    if (dist < best.z) { best.x = (v.x * .5 + .5) * innerWidth; best.y = (-v.y * .5 + .5) * innerHeight; best.z = dist; } }
+  return best;
+}
+function awaken() {
+  if (motion.phase !== 'sleeping') return;
+  Sound.init();
+  const eye = eyeScreen();
+  dragonUniforms.uDotted.value = 1;
+  Sound.drop();
+  inkBurst(eye.x, eye.y, 26, 'rgba(18,16,15,', 5);
+  setTimeout(() => {
+    inkBurst(innerWidth * .5, innerHeight * .44, Math.min(innerWidth, innerHeight) * .32, 'rgba(18,16,15,', 9);
+    Sound.boom(); Sound.roar(.08);
+    if (!reduceMotion) { shake = 1; flash = .5; }
+    motion.phase = 'waking'; motion.phaseTime = 0;
+    motion.vel.set(motion.vel.x, .4, motion.vel.z).normalize().multiplyScalar(10);
+    document.body.classList.remove('sleeping');
+    state.awake = true; writeHash();
+  }, 420);
+}
+function sleepAgain() {
+  motion.phase = 'sleeping'; dragonUniforms.uDotted.value = 0; coilTrail(); rebuildTable();
+  document.body.classList.add('sleeping'); state.awake = false; writeHash();
+}
+
+// ------------------------------------------------------------------ keepsakes: picture, six-second film, shareable link
+const compose = document.createElement('canvas'), cg = compose.getContext('2d');
+const grainCanvas = document.getElementById('grain');
+function composeFrame() {
+  const W = renderer.domElement.width, H = renderer.domElement.height;
+  if (compose.width !== W || compose.height !== H) { compose.width = W; compose.height = H; }
+  cg.globalCompositeOperation = 'source-over'; cg.globalAlpha = 1;
+  cg.drawImage(renderer.domElement, 0, 0, W, H); cg.drawImage(fx, 0, 0, W, H);
+  cg.globalCompositeOperation = 'multiply'; cg.globalAlpha = .5; cg.drawImage(grainCanvas, 0, 0, W, H);
+  cg.globalCompositeOperation = 'source-over'; cg.globalAlpha = 1;
+  const unit = Math.min(W, H) / 900, title = '山水墨龙';
+  cg.fillStyle = '#16181C'; cg.font = `${Math.round(56 * unit)}px "Ma Shan Zheng", "Xingkai SC", "KaiTi", serif`; cg.textBaseline = 'top';
+  [...title].forEach((ch, k) => cg.fillText(ch, 28 * unit, (26 + k * 60) * unit));
+  cg.fillStyle = '#B3261E'; cg.fillRect(92 * unit, 30 * unit, 34 * unit, 34 * unit);
+  cg.fillStyle = '#F4EFE3'; cg.font = `${Math.round(24 * unit)}px "Ma Shan Zheng", "KaiTi", serif`; cg.fillText('墨', 97 * unit, 34 * unit);
+  const sign = document.getElementById('signature').value.trim();
+  if (sign) { cg.fillStyle = '#16181C'; cg.font = `${Math.round(22 * unit)}px "Ma Shan Zheng", "KaiTi", serif`; [...sign].forEach((ch, k) => cg.fillText(ch, 100 * unit, (80 + k * 24) * unit)); }
+  cg.fillStyle = 'rgba(22,24,28,.55)'; cg.font = `${Math.round(13 * unit)}px "IBM Plex Mono", monospace`; cg.textBaseline = 'bottom';
+  cg.fillText(`threerocks.github.io/ink-dragon  龙谱 ${pad(state.dragonSeed)} · 山图 ${pad(state.landSeed)}`, 28 * unit, H - 20 * unit);
+}
+function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+let snapPending = false, recording = null;
+function finishSnap() { composeFrame(); compose.toBlob(b => { if (b) { download(b, `山水墨龙-${pad(state.dragonSeed)}.png`); toast('已存图'); } else toast('这个浏览器不能存图'); }, 'image/png'); }
+function startRecording() {
+  if (recording) return;
+  if (!window.MediaRecorder || !compose.captureStream) { toast('这个浏览器不支持录制，请用 Chrome、Edge 或 Safari'); return; }
+  Sound.init(); composeFrame();
+  const stream = compose.captureStream(30), audio = Sound.stream();
+  if (audio) audio.getAudioTracks().forEach(track => stream.addTrack(track));
+  const type = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+  if (!type) { toast('这个浏览器不支持录制，请用 Chrome、Edge 或 Safari'); return; }
+  const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 8000000 }), chunks = [];
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => { download(new Blob(chunks, { type }), `山水墨龙-${pad(state.dragonSeed)}.${type.includes('mp4') ? 'mp4' : 'webm'}`); toast('六秒短片已保存'); };
+  rec.start(250); recording = { rec, until: clock + 6 };
+  const button = document.getElementById('record'); button.setAttribute('aria-pressed', 'true');
+}
+function tickRecording() {
+  if (!recording) return; composeFrame();
+  const left = Math.ceil(recording.until - clock), button = document.getElementById('record');
+  button.textContent = left > 0 ? `录制中 ${left}` : '录六秒';
+  if (clock >= recording.until) { recording.rec.stop(); recording = null; button.setAttribute('aria-pressed', 'false'); button.textContent = '录六秒'; }
+}
+const pad = n => String(n).padStart(4, '0');
+function writeHash() {
+  const h = new URLSearchParams({ d: state.dragonSeed, l: state.landSeed, p: state.palette, t: state.time, w: state.weather, m: state.mode });
+  if (state.awake) h.set('wake', '1');
+  history.replaceState(null, '', '#' + h.toString());
+}
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const int = (k, d) => { const v = parseInt(h.get(k), 10); return Number.isFinite(v) && v >= 0 && v < 100000 ? v : d; };
+  state.dragonSeed = int('d', state.dragonSeed); state.landSeed = int('l', state.landSeed);
+  if (PALETTES[h.get('p')]) state.palette = h.get('p');
+  if (h.get('t') in TIMES) state.time = h.get('t');
+  if (h.get('w') in WEATHER_SKY) state.weather = h.get('w');
+  if (['patrol', 'pearl'].includes(h.get('m'))) state.mode = h.get('m');
+  state.awake = h.get('wake') === '1';
+}
+
+// ------------------------------------------------------------------ grain, resize, toast
+let toastTimer = 0;
+function toast(text) { const t = document.getElementById('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1800); }
 function paintGrain() {
-  const g = document.getElementById('grain'), w = Math.ceil(innerWidth / 2), h = Math.ceil(innerHeight / 2);
-  g.width = w; g.height = h; const ctx = g.getContext('2d'); const img = ctx.createImageData(w, h); const rng = rngFrom(5);
+  const w = Math.ceil(innerWidth / 2), h = Math.ceil(innerHeight / 2);
+  grainCanvas.width = w; grainCanvas.height = h; const ctx = grainCanvas.getContext('2d'); const img = ctx.createImageData(w, h); const rng = rngFrom(5);
   for (let i = 0; i < w * h; i++) { const v = 238 + rng.random() * 17; img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v - 3; img.data[i * 4 + 3] = 255; }
   ctx.putImageData(img, 0, 0);
 }
-function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); paintGrain(); }
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  fx.width = Math.round(w * Math.min(devicePixelRatio || 1, 1.5)); fx.height = Math.round(h * Math.min(devicePixelRatio || 1, 1.5)); paintGrain(); }
 window.addEventListener('resize', resize);
 
 // ------------------------------------------------------------------ controls
 const $ = id => document.getElementById(id);
-function updateCatalogue() { $('catalogue').textContent = `龙谱 ${String(state.dragonSeed).padStart(4, '0')} · 山图 ${String(state.landSeed).padStart(4, '0')}`; }
-function setView(view) { state.view = view; chase.ready = false;
-  document.querySelectorAll('#views button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view))); }
-document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
-document.querySelectorAll('#palettes button').forEach(b => b.addEventListener('click', () => {
-  state.palette = b.dataset.palette; document.querySelectorAll('#palettes button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); applyPalette(); }));
+function updateCatalogue() { $('catalogue').textContent = `龙谱 ${pad(state.dragonSeed)} · 山图 ${pad(state.landSeed)}`; }
+function press(groupId, attr, value) { document.querySelectorAll(`#${groupId} button`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === value))); }
+function setView(view) { state.view = view; chase.ready = false; press('views', 'view', view); }
+function setMode(mode) { state.mode = mode; press('modes', 'mode', mode); pearl.visible = mode === 'pearl';
+  document.body.classList.toggle('pearl', mode === 'pearl');
+  if (mode === 'pearl') { pearlGoal.copy(motion.head).add(new THREE.Vector3(0, 6, 0)); pearl.position.copy(pearlGoal); setView('wide'); toast('移动鼠标或手指，引龙追珠'); }
+  writeHash(); }
+let note = 0;
+const pluckNext = () => { Sound.init(); Sound.pluck(PENTATONIC[note++ % PENTATONIC.length]); };
+document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => { setView(b.dataset.view); pluckNext(); }));
+document.querySelectorAll('#modes button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); pluckNext(); }));
+document.querySelectorAll('#palettes button').forEach(b => b.addEventListener('click', () => { state.palette = b.dataset.palette; press('palettes', 'palette', state.palette); applyLook(); writeHash(); pluckNext(); }));
+document.querySelectorAll('#times button').forEach(b => b.addEventListener('click', () => { state.time = b.dataset.time; press('times', 'time', state.time); applyLook(); writeHash(); pluckNext(); }));
+document.querySelectorAll('#weathers button').forEach(b => b.addEventListener('click', () => { state.weather = b.dataset.weather; press('weathers', 'weather', state.weather); applyLook(); writeHash(); Sound.init(); nextBolt = clock + 1.2; }));
 let rebuild = 0;
 const formats = { length: v => v.toFixed(0), girth: v => v.toFixed(2), antler: v => v.toFixed(2), fur: v => v.toFixed(2), speed: v => v.toFixed(0), wind: v => v.toFixed(1), mist: v => v.toFixed(2) };
 for (const key of Object.keys(formats)) {
   const input = $(key), out = input.nextElementSibling;
   const sync = () => { const v = parseFloat(input.value); state[key] = v; out.textContent = formats[key](v);
     input.style.setProperty('--fill', ((v - input.min) / (input.max - input.min) * 100) + '%');
-    if (['length', 'girth', 'antler', 'fur'].includes(key)) { clearTimeout(rebuild); rebuild = setTimeout(makeDragon, 140); }
-    if (key === 'mist') cloudLayers.forEach(m => { m.material.uniforms.uDensity.value = v; }); };
+    if (['length', 'girth', 'antler', 'fur'].includes(key)) { clearTimeout(rebuild); rebuild = setTimeout(() => { makeDragon(); if (motion.phase === 'sleeping') coilTrail(); rebuildTable(); }, 140); }
+    if (key === 'mist') applyLook(); };
   input.addEventListener('input', sync); sync();
 }
-$('newDragon').addEventListener('click', () => { state.dragonSeed = Math.floor(Math.random() * 9000) + 100; makeDragon(); });
-$('newLand').addEventListener('click', () => { state.landSeed = Math.floor(Math.random() * 9000) + 100; buildField(state.landSeed); buildPath(state.landSeed); dragon.distance = 0; chase.ready = false; updateCatalogue(); });
+$('newDragon').addEventListener('click', () => { state.dragonSeed = Math.floor(Math.random() * 9000) + 100; makeDragon(); if (motion.phase === 'sleeping') coilTrail(); rebuildTable(); writeHash(); pluckNext(); });
+$('newLand').addEventListener('click', () => { state.landSeed = Math.floor(Math.random() * 9000) + 100; buildField(state.landSeed); buildPath(state.landSeed); if (motion.phase === 'flying') motion.pathS = nearestPathS(motion.head); chase.ready = false; updateCatalogue(); writeHash(); pluckNext(); });
 $('pause').addEventListener('click', e => { state.paused = !state.paused; e.currentTarget.setAttribute('aria-pressed', String(state.paused)); e.currentTarget.textContent = state.paused ? '续飞' : '定格'; });
+$('resleep').addEventListener('click', sleepAgain);
+$('dotEye').addEventListener('click', awaken);
+$('snap').addEventListener('click', () => { snapPending = true; });
+$('record').addEventListener('click', startRecording);
+$('share').addEventListener('click', async () => { writeHash(); try { await navigator.clipboard.writeText(location.href); toast('链接已复制，打开就是这条龙'); } catch (e) { toast('复制失败，请手动复制地址栏'); } });
+$('sound').addEventListener('click', e => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', String(on)); e.currentTarget.textContent = on ? '声音 开' : '声音 关'; Sound.init(); Sound.setEnabled(on); });
 $('toggle').addEventListener('click', e => { const panel = $('panel'); const open = panel.classList.toggle('closed') === false;
   e.currentTarget.setAttribute('aria-expanded', String(open)); e.currentTarget.textContent = open ? '收起' : '展开'; });
 if (matchMedia('(max-width: 720px)').matches) $('panel').classList.add('closed');
 else { $('toggle').setAttribute('aria-expanded', 'true'); $('toggle').textContent = '收起'; }
-if (state.paused) { $('pause').setAttribute('aria-pressed', 'true'); $('pause').textContent = '续飞'; }
 
 // ------------------------------------------------------------------ run
-buildField(state.landSeed); buildPath(state.landSeed); makeDragon(); applyPalette(); resize();
-dragon.distance = PATH.length * .15;
-let last = performance.now();
+readHash();
+press('palettes', 'palette', state.palette); press('times', 'time', state.time); press('weathers', 'weather', state.weather);
+buildField(state.landSeed); buildPath(state.landSeed); makeDragon(); coilTrail(); rebuildTable(); applyLook(); resize();
+setMode(state.mode);
+if (state.awake) { // a shared link that was already awake opens flying
+  dragonUniforms.uDotted.value = 1; motion.phase = 'flying'; motion.pathS = nearestPathS(motion.head);
+  motion.vel.set(1, .2, 0).normalize().multiplyScalar(state.speed); document.body.classList.remove('sleeping');
+}
+let last = performance.now(), clock = 0;
 function tick(now) {
-  const dt = Math.min(.05, (now - last) / 1000); last = now;
-  if (!state.paused) { state.time += dt; dragon.distance += state.speed * dt; }
-  skyMat.uniforms.uTime.value = state.time; cloudLayers.forEach(m => { m.material.uniforms.uTime.value = state.time; });
-  bendDragon(state.time);
-  placeCamera(dt);
+  const dt = Math.min(.05, (now - last) / 1000); last = now; clock += dt;
+  if (!state.paused) { motionClock += dt; steer(dt); }
+  if (state.mode === 'pearl') { pearl.position.lerp(pearlGoal, 1 - Math.exp(-dt * 6)); const s = 9 + Math.sin(clock * 5) * .8; pearl.scale.set(s, s, 1);
+    if (motion.phase === 'flying' && motion.head.distanceTo(pearl.position) < 7 && clock - caughtAt > 2.5) { caughtAt = clock; Sound.chime(); } }
+  rebuildTable();
+  bendDragon(motionClock);
+  placeCamera(dt, clock);
+  skyMat.uniforms.uTime.value = clock; cloudLayers.forEach(m => { m.material.uniforms.uTime.value = clock; });
+  if ((state.weather === 'thunder') && clock > nextBolt) { lightning(fx.width, fx.height); nextBolt = clock + 4 + Math.random() * 6; }
+  flash = Math.max(0, flash - dt * 2.4); skyMat.uniforms.uFlash.value = flash * .8;
+  shake = Math.max(0, shake - dt * 1.8);
+  const sx = shake > 0 && !reduceMotion ? (Math.sin(clock * 83) * 14 * shake) : 0, sy = shake > 0 && !reduceMotion ? (Math.cos(clock * 61) * 10 * shake) : 0;
+  const offset = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`; stage.style.transform = offset; fx.style.transform = offset;
   sky.position.copy(camera.position);
-  moon.position.copy(camera.position).addScaledVector(MOON_DIR, 900);
+  moon.position.copy(camera.position).addScaledVector(sunDir, 900);
   renderer.render(scene, camera);
+  fxg.clearRect(0, 0, fx.width, fx.height);
+  drawWeather(dt, fx.width, fx.height);
+  fxg.save(); fxg.scale(fx.width / innerWidth, fx.height / innerHeight); drawBursts(); fxg.restore();
+  drawBolts();
+  if (motion.phase === 'sleeping') { const e = eyeScreen(); const ring = $('ring'); ring.style.left = e.x + 'px'; ring.style.top = e.y + 'px'; }
+  Sound.update(clock, state.wind, state.speed, state.weather, motion.phase === 'sleeping');
+  if (snapPending) { snapPending = false; finishSnap(); }
+  tickRecording();
   requestAnimationFrame(tick);
 }
+let motionClock = 0;
 requestAnimationFrame(tick);
 })();
 </script>
